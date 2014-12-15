@@ -1,0 +1,488 @@
+### Formation COST Lorient - 2 au 4 décembre ###
+
+rm(list=ls())
+library(lattice)
+library(COSTcore)
+library(COSTdbe)
+library(tcltk2)
+library(COSTeda)
+#install.packages('Rcmdr')
+#library(Rcmdr)
+library(tkrplot)
+#library(COSTgui)
+library(COSTifremer)
+library(COSTreport)
+library(COSTdata)
+#librairies qui datent d'avant 2.10.0
+#library(COSTmbe)
+#library(COSTsim)
+
+
+setwd("C:/Users/jalemany.IFR/Documents/formation cost/Data")
+load('CE_7e-k_2013.Rdata')
+load('CL_2013.Rdata')
+load('CS_2013.Rdata')
+ls()
+str(myCL)
+is(myCL)
+myCE@desc<-'All stocks'
+# sélectionne les OP valides
+myCS <- subset(myCS, foVal == 'V', table="hh")
+str(myCE)
+slotNames(myCS)
+
+setwd("C:/Users/jalemany.IFR/Documents/formation cost/Data/COST_OBSMER_2014")
+hh<-read.csv('HH.csv', sep=';', header=TRUE)
+str(hh)
+hl<-read.csv('HL.csv', sep=';', header=TRUE)
+sl<-read.csv('SL.csv', sep=';', header=TRUE)
+tr<-read.csv('TR.csv', sep=';', header=TRUE)
+
+# si pb d'intégrité à l'import des tables
+pipo<-merge(sl,hl,all.x=TRUE, all.y=TRUE)
+str(pipo)
+ind<-which(is.na(pipo$sl))
+str(myCS)
+unique(myCS@hh$foCatEu5)
+
+test_cs<-csData(tr=tr,hh=hh,sl=sl,hl=hl)
+
+
+
+# B - FILTRAGE DES DONNEES
+#-------------------------
+# cas du lieu
+CSr <- subset(myCS, area %in% c("27.7.a", "27.7.b", "27.7.c", "27.7.d", "27.7.e", "27.7.f",
+                                  "27.7.g", "27.7.h", "27.7.j", "27.7.k", "27.6.a","27.6.b"), table='hh', link=TRUE)
+table(CSr.l@hl$spp)
+CSr <- subsetSpp(CSr, spp %in% 'Pollachius pollachius', table='sl', link=TRUE)
+str(myCS)
+table(myCS@sl$spp)
+CLr <- subset(myCL,area %in% c("27.7.a", "27.7.b", "27.7.c", "27.7.d", "27.7.e", "27.7.f",
+                                 "27.7.g", "27.7.h", "27.7.j", "27.7.k", "27.6.a","27.6.b"), table='hh')
+#CLr <- subset(CLr, taxon %in% 'WHG')
+CEr <- subset(myCE,area %in% c("27.7.a", "27.7.b", "27.7.c", "27.7.d", "27.7.e", "27.7.f",
+                                 "27.7.g", "27.7.h", "27.7.j", "27.7.k", "27.6.a","27.6.b"), table='hh')
+
+controlMap(CSr, CLr, CEr)  
+help(controlMap)
+
+# C - ANALYSE EXPLORATOIRE
+#-------------------------
+mysubset_cs<-subset(CSr,!(rect %in% c('','006A','006B')),table='hh', # ! veut dire ne contient pas
+                    link=TRUE)
+
+str(CLr)
+table(CLr@cl$rect)
+mysubset_cl<-subset(CLr,!(rect %in% c('','006A','006B')),table='cl',
+                    link=TRUE)
+
+spacePlot(costobj = mysubset_cl, variable = "landWt", SpaceStrata = "rect",  
+          func = sum, maptype = "image", xlim = c(-18, 1), ylim = c(46,     64), 
+          main = "Lieu jaune Mer Celtique 2013", overlay = FALSE, area.lines = TRUE, 
+          statrects = TRUE,     fcoast = FALSE, breaks = c(0, 200, 400, 600, 800, 1000, 1200, 1400),
+          landmass = TRUE, colour = TRUE, scale = TRUE,     scale.cex = 0.65, 
+          scale.title = "Captures commerciales", scaleplace = "top")
+
+spacePlot(costobj = mysubset_cs, variable = "lenNum", SpaceStrata = "rect", 
+          func = sum, maptype = "bubble", xlim = c(-13, -1), ylim = c(46,     54),
+          overlay=TRUE, area.lines = TRUE, statrects = TRUE, fcoast = FALSE,     landmass = TRUE, 
+          colour = TRUE, scale = TRUE, scale.cex = 0.65,     scaleplace = "topright", col.pch='black',
+          breaks=c(0, 50, 300, 500, 1000, 1500),
+          scale.title = "Nb poissons mesurés", pch = 20, cex.max.bubble = 3)
+
+
+
+unique(CSr@hh$foDur)
+head(CSr)
+delta <- deltCalc(CSr, strIni(techStrata='foCatEu5',timeStrata='quarter'), species="Pollachius pollachius", fraction="LAN", strategy="metier")
+#delta@outPut$SampDeltaMat           
+x <- plot(delta,strat1="timeStrata",strat2="techStrata", selection=TRUE)
+plot(x)
+
+
+names(x@outPut)
+x@outPut$sampId  ### donne les références pour les valeurs outliers
+ind<-which(CSr@hh$trpCode %in% x@outPut$sampId$trpCode)
+ind
+CSr@hh[ind,]  ### les individus à supprimer
+toto<-as.numeric(as.character(x@outPut$sampId$trpCode)) # strCode : numéro de marée
+toto2<-as.numeric(as.character(x@outPut$sampId$staNum))
+tata<-subset(CSr, trpCode %in% toto & staNum %in% toto2, table="hh", link=TRUE) # link=T ça disparait
+tata@sl
+subset(tata, catchCat %in% "DIS", table='sl')
+
+### controle universel du poids
+
+pind<-0.0000001*(tata@hl$lenCls)^3*tata@hl$lenNum
+tapply(pind, list(paste(tata@hl$TrpCode, tata@hl$staNum, tata@hl$catchCat)), sum)
+tata@sl$subSampWt
+tapply(tata@sl$subSampWt/1000, list(paste(tata@sl$TrpCode, tata@sl$staNum, tata@sl$catchCat)), sum)
+
+### problèmes pour numero 1LAN, 2DIS, 2LAN, 5LAN, 6LAN : pb dans le poids échantillonné
+
+CSr1<-subset(CSr, !(trpCode %in% toto & staNum %in% toto2, table="hh", link=TRUE))
+
+
+# D - VALIDATION : pour dire au système qu'on a bien validé les données, étape nécessaire pour que les fonctions cost marchent
+#---------------
+#CLr@cl$foCatEu5 <- paste(CLr@cl$foCatEu5,'0',sep='_')
+#CEr@ce$foCatEu5 <- paste(CEr@ce$foCatEu5,'0',sep='_')
+table(CSr@hh$foCatEu5)
+table(CLv@cl$foCatEu5)
+
+CSv <- csDataVal(CSr)
+CLv <- clDataVal(CLr)
+CEv <- ceDataVal(CEr)
+is(CSv)
+CSv@desc<-'Pollachius pollachius 6-7'
+
+#### reporting : donne nombre de poissons mesurés par strate
+disInfo(CSv, 'C:/Users/jalemany.IFR/Documents/formation cost/exo/lieu validé/out_lieu.txt', 'lenNum','foCatEu5', fun=sum, append=FALSE)
+
+
+# E - STRATIFICATION
+#-------------------
+
+tabConsist(list(CSv, CLv), 'area')
+### ici on voit que pas de hh pour 6b et 7a, on va les conserver mais restratifier
+
+### la on voit que peu de métiers font 98% des débarquements !
+TA<-tapply(CLv@cl$landWt, list(CLv@cl$foCatEu5), sum)
+cumTA<-cumsum(TA[rev(order(TA))]/sum(TA))
+plot(cumTA, type='l', col='blue', main='Débarquements cumulés par métiers', xlab='Nombre de métiers', ylab='Taux du débarquement total')
+ind<-which(cumTA<=0.80)  ### métiers qui représentent 80% des débarquements
+ind
+TTA<-TA[order(TA)] ## pour classer par ordre croissant les tonnages par métier
+
+#names(ind)<-paste(names(ind), '0', sep='_') ### besoin de recoder les noms pour avoir les memes que dans foCatEu
+pipo<-subset(CSv, foCatEu5 %in% names(ind), table='hh')  ### regarde le nombre de poissons mesurés dans les métiers qui représentent plus de 98% des données
+pipo2<-subset(CSv, !(foCatEu5 %in% names(ind)), table='hh')  ### complémentaire : métiers qui représentent peu de données
+disInfo(pipo, 'C:/Users/jalemany.IFR/Documents/formation cost/exo/lieu validé/out_métier_lieu.txt', 'lenNum','foCatEu5', fun=sum, append=FALSE, title='Individus mesurés pour les métiers représentant plus de 80% des débarquements')
+disInfo(pipo2, 'C:/Users/jalemany.IFR/Documents/formation cost/exo/lieu validé/out_métier_lieu.txt', 'lenNum','foCatEu5', fun=sum, append=TRUE, title='Individus mesurés pour les métiers représentant moins de 80% des débarquements')
+## append=TRUE pour écrire à la suite
+disInfo(pipo2, 'C:/Users/jalemany.IFR/Documents/formation cost/exo/lieu validé/out_métier_lieu.txt', 'trpCode','foCatEu5', fun=length, append=TRUE, title='Nombre de marées représentant moins de 80% des débarquements')
+
+# remplacement de tous les métiers secondaires par 'MIS_MIS_0_0_0', pb pour seiche pour cl et ce met tout en mis mis
+CSv@hh$foCatEu5[!(CSv@hh$foCatEu5 %in% names(ind))] <- 'MIS_MIS'
+CLv@cl$foCatEu5[!(CLv@cl$foCatEu5 %in% names(ind))] <- 'MIS_MIS'
+CEv@ce$foCatEu5[!(CEv@ce$foCatEu5 %in% names(ind))] <- 'MIS_MIS'
+table(CSv@hh$foCatEu5)
+table(CLv@cl$foCatEu5)
+
+#CSv@hh$foCatNat <- substring(CSv@hh$foCatEu5,1,3)
+#CLv@cl$foCatNat <- substring(CLv@cl$foCatEu5,1,3)
+#CEv@ce$foCatNat <- substring(CEv@ce$foCatEu5,1,3)
+
+delta <- deltCalc(CSv, strIni(techStrata='foCatEu5',spaceStrata='sampType'), species="Pollachius pollachius", fraction="LAN", strategy="metier")
+plot(delta,strat1="timeStrata",strat2="techStrata", selection=FALSE)
+plot(delta,strat1="techStrata",strat2="spaceStrata", selection=FALSE) ## que des données obsmer
+
+unique(CSv@hh$foCatEu5)
+
+myStr <- strIni(techStrata='foCatEu5',timeStrata='quarter',spaceStrata='area',
+	tcRec = list(from=c("MIS_MIS", "DRB_MOL", "OTB_DEF", "OTM_SPF", "GNS_DEF", "OTT_DEF", 
+"FPO_MOL", "OTB_CEP" ), 
+				 to = c("MIS_MIS", "DRB_MOL", "OTB_DEF", "OTM_SPF", "GNS_DEF", "OTT_DEF", 
+"FPO_MOL", "OTB_CEP"  )),
+	spRec = list(from = c("27.7.a", "27.7.b", "27.7.c", "27.7.d", "27.7.e", "27.7.f",
+                                "27.7.g", "27.7.h", "27.7.j", "27.7.k", "27.6.a", "27.6.b"),
+				  to = c('VIIagfh', 'VIIbcjk','VIIbcjk', 'VIIde', 'VIIde',
+ 'VIIagfh', 'VIIagfh', 'VIIagfh', 'VIIbcjk',  'VIIbcjk', 'VI', 'VI'))
+				  )
+# F - CONSOLIDATION
+#------------------
+CSc <- csDataCons(CSv, myStr)
+CLc <- clDataCons(CLv, myStr)
+CEc <- ceDataCons(CEv, myStr)
+
+rel_CS <- relativeValue(CSv,myStr,"nbSamp")
+rel_CL <- relativeValue(CLv, myStr)
+plot(rel_CS, rel_CL)
+
+str(CSc)
+
+rel_CS <- relativeValue(CSv,myStr,"lenNum")
+rel_CL <- relativeValue(CLv, myStr)
+plot(rel_CL, rel_CS)
+
+############# FIN DE LA PREMIERE PARTIE ######
+
+setwd("C:/Users/jalemany.IFR/Documents/formation cost/exo/lieu validé")
+save(CSv,CLv,CEv,myStr,CSc,CLc,CEc, file='lieu_2013_CONSOLIDATED.Rdata')
+
+################################################################################################
+Partie analyse
+###############################################################################################
+
+# A - CHARGEMENT DES DONNEES
+#---------------------------
+setwd("C:/Users/jalemany.IFR/Documents/formation cost/exo/lieu validé")
+load('lieu_2013_CONSOLIDATED.Rdata')
+
+# B - STRUCTURE EN TAILLE
+#------------------------
+DI<-landisVol(CSv,species=c('Pollachius pollachius'),fraction='DIS')
+wT<-landisVol(CSv,species=c('Pollachius pollachius'),fraction='LAN') # pour regarder les captures par marée, important pour les rejets
+# poids par jour de pêche (donc si on a une marée avec plusieurs jours on a un boxplot avec intervalle de co,fiance. Si point isolé c'est qu'il sort de l'écart inter-quartile)
+boxplot(wT)
+boxplot(DI)
+wT2<-landisVol(subset(CSv, sampType %in% 'S'),species=c('Pollachius pollachius'),fraction='LAN')
+boxplot(wT2)
+# x<-identify(locator()) 
+
+# on prend ObsMer et/ou ObsVentes?
+# on va recréer un myStr cette fois avec spaceStrata
+myStr2<-myStr
+myStr2@spaceStrata<-'sampType'
+delta <- deltCalc(CSv, myStr2, species="Pollachius pollachius", fraction="LAN", strategy="metier")
+plot(delta,strat1="techStrata",strat2="spaceStrata", selection=FALSE)
+
+out_dbe<-dbeObject(desc='Pollachius pollachius 6-7',species='Pollachius pollachius',
+  strataDesc=myStr,param='number@length',catchCat='LAN',
+  methodDesc='analytical') ## ici on peut dire qu'on veut analytical ou bootstrap
+
+out_dbe
+head(CSv)
+out_dbe<-RaiseLgth(dbeOutput=out_dbe,spp='Pollachius pollachius',taxon='WHG', csObject=CSc,clObject=CLc,sampPar=TRUE)
+
+windows(record=TRUE)
+dbePlot(object=out_dbe,elmt='lenNum$ci',dispKey=TRUE,indScale=TRUE, ylab='number at length')
+slotNames(out_dbe)
+out_dbe@nMeas ## montre nombre d'individus mesurés
+
+#Quelles sont les strates avec <100 poissons mesurés
+ind <- which(out_dbe@nMeas$len$value<100)
+out_dbe@nMeas$len[ind,] ### les trois strates où on a moins de 100 poissons mesurés, on va enlever ces trois strates dans l'objet consolidé CS
+
+CSc2 <- CSc
+for (i in 1:length(ind))
+   CSc2 <- subset(CSc2, !(time %in% out_dbe@nMeas$len$time[ind[i]] & technical %in% out_dbe@nMeas$len$technical[ind[i]]), table='hh')
+length_dbe<-RaiseLgth(dbeOutput=out_dbe,spp='Pollachius pollachius',taxon='WHG', csObject=CSc2,clObject=CLc,sampPar=TRUE)
+dbePlot(object=length_dbe,elmt='lenNum$ci',dispKey=TRUE,indScale=TRUE, ylab='number@length')
+
+### élévation à l'ensemble des marées échantillonnées seulement (donc pas d'élévation)
+windows(record=TRUE)
+length_dbe_ech<-RaiseLgth(dbeOutput=out_dbe,spp='Pollachius pollachius',
+                      taxon='WHG', csObject=CSc2,sampPar=TRUE)
+dbePlot(object=length_dbe_ech,elmt='lenNum$ci',dispKey=TRUE,indScale=TRUE, ylab='number@length')
+
+#aggrégations sur les métiers
+aggreg<-stratAggreg(object=length_dbe,timeStrata=FALSE,techStrata=TRUE, spaceStrata=TRUE,incl.precision=TRUE,wt='totalW')
+par(mfrow=c(2,2))
+dbePlot(object=aggreg,elmt='lenNum$ci',dispKey=TRUE,indScale=TRUE,   ylab='number at length')
+
+SA <- stratAggreg(length_dbe_ech, spaceStrata=TRUE, timeStrata=TRUE, techStrata=TRUE)
+dbePlot(object=SA,elmt='lenNum$ci',dispKey=TRUE,indScale=TRUE,   ylab='number@length')
+
+#Aggrégations sur l'année
+aggreg<-stratAggreg(object=length_dbe,timeStrata=TRUE,techStrata=TRUE, spaceStrata=TRUE,incl.precision=TRUE,wt='totalW')
+dbePlot(object=aggreg,elmt='lenNum$ci',dispKey=TRUE,indScale=TRUE,   ylab='number@length')
+ 
+# C - STRUCTURE EN AGE
+#---------------------
+CSc2@sl$lenCode <- 'cm'
+CSc2@ca$lenCode <- 'cm'
+viewGapsAlkCons(CSc2)
+# point : pas d'information ni sur les tailles ni sur les ages pour les landings. Tiret : pas d'info d'age pour cette 
+# classe de taille, mais cette structure en taille est dans la structure en taille de la strate
+# si sur une ligne on a un age, donne le nombre d'individus de cet age, et met 0 si rien pour les autres ages
+CSc2_mult<-fillALKmult(object=CSc2,spp='Pollachius pollachius',p=10,  # on renseigne chaque ligne avec 10 individus
+  TRACE=FALSE)
+viewGapsAlkCons(CSc2_mult)  
+
+age_dbe<-RaiseAge(dbeOutput=length_dbe,csObject=CSc2_mult)
+dbePlot(object=age_dbe,elmt='ageNum$ci',dispKey=TRUE,indScale=TRUE,   ylab='number@age')
+ 
+#aggrégations sur les métiers
+aggreg<-stratAggreg(object=age_dbe,timeStrata=FALSE,techStrata=TRUE, spaceStrata=TRUE,incl.precision=TRUE,wt='totalW')
+dbePlot(object=aggreg,elmt='ageNum$ci',dispKey=TRUE,indScale=TRUE,   ylab='number@age')
+
+#Aggrégations sur l'année
+aggreg<-stratAggreg(object=age_dbe,timeStrata=TRUE,techStrata=TRUE, spaceStrata=TRUE,incl.precision=TRUE,wt='totalW')
+dbePlot(object=aggreg,elmt='ageNum$ci',dispKey=TRUE,indScale=TRUE,   ylab='number@age')
+
+
+############# FIN DE LA PARTIE ANALYSE DEMOGRAPHIQUE ######
+save(CSc2_mult, age_dbe, file='seiche_2013_AGE_STRUCT.Rdata')
+########################################################################
+partie rejets 
+#######################################################################
+# A - CHARGEMENT DES DONNEES
+#---------------------------
+workingDir <- "C:/Users/jalemany.IFR/Documents/formation cost/exo"
+setwd(workingDir)
+load('WHG_MC_2013_CONSOLIDATED.Rdata')
+load('WHG_MC_2013_AGE_STRUCT.Rdata')
+
+# B - EXPLORATOIRE
+#-----------------
+CSDv <- subset(CSc, sampType %in% 'S', link=FALSE)
+wT<-landisVol(CSDv,species=c('Pollachius pollachius'),fraction='DIS')
+boxplot(wT)
+
+CSDc <- subset(CSc, sampType %in% c('S','V'), link=FALSE)
+
+# C - STRUCTURE EN TAILLE COMPAREE REJET/RETENU
+#----------------------------------------------
+LAN_dbe<-dbeObject(desc='Pollack 6-7',species='Pollachius pollachius',
+  strataDesc=myStr,param='number@length',catchCat='LAN',  methodDesc='analytical')
+DIS_dbe<-dbeObject(desc='Pollack 6-7',species='Pollachius pollachius',
+  strataDesc=myStr,param='number@length',catchCat='DIS',  methodDesc='analytical')
+
+length_LAN_dbe<-RaiseLgth(dbeOutput=LAN_dbe,spp='Pollachius pollachius',taxon='WHG', csObject=CSDc,sampPar=TRUE)
+length_DIS_dbe<-RaiseLgth(dbeOutput=DIS_dbe,spp='Pollachius pollachius',taxon='WHG', csObject=CSDc,sampPar=TRUE)
+  
+DIS_DF <- rbind.data.frame(data.frame(length_DIS_dbe@lenStruc$estim, fraction='DIS'), data.frame(length_LAN_dbe@lenStruc$estim, fraction='LAN'))
+RES <- tapply(DIS_DF$value, list(DIS_DF$length, DIS_DF$fraction, DIS_DF$time, DIS_DF$technical), sum)
+
+library(lattice)
+windows(record=TRUE)
+barchart(value~length | time + technical, group=fraction, data=DIS_DF, stack=TRUE,scales=list(cex=.5, rot=90), main = 'Landings (pink) and discards (blue) - Pollachius pollachius')
+
+# landings en rose et discards en bleu
+
+# D - CHOIX DE LA METHODE D'ESTIMATION
+#-------------------------------------
+res<-disCorrPlot(object=CSDc,timeStrata=FALSE,techStrata=TRUE, aux='time',
+   spaceStrata=FALSE,sampPar=TRUE,reg=TRUE,show.legend=TRUE,val='weight',
+   species=c('Pollachius pollachius'),landSpp=c('WHG'))
+windows()
+res<-disCorrPlot(object=CSDc,timeStrata=TRUE,techStrata=TRUE, aux='time',
+   spaceStrata=FALSE,sampPar=TRUE,reg=TRUE,show.legend=TRUE,val='weight',
+   species=c('Pollachius pollachius'),landSpp=c('WHG'))
+   
+res<-disCorrPlot(object=subset(CSDc,technical %in% c('OTB','TBB','OTM')),timeStrata=TRUE,techStrata=TRUE, aux='landings',
+   spaceStrata=FALSE,sampPar=TRUE,reg=TRUE,show.legend=TRUE,val='weight',
+   species=c('Pollachius pollachius'),landSpp=c('WHG'))
+windows()
+res<-disCorrPlot(object=CSDc,timeStrata=FALSE,techStrata=TRUE, aux='landings',
+   spaceStrata=FALSE, species=c('Pollachius pollachius'))
+
+res<-disCorrPlot(object=CSDc,timeStrata=TRUE,techStrata=FALSE, aux='landings',
+                 spaceStrata=FALSE, species=c('Pollachius pollachius'))
+   
+   
+# E - ESTIMATIONS
+# ---------------
+# E1 - Estimation par le nombre de marées
+totV_marees <- totVolume(dbeOutput=DIS_dbe,csObject=CSDc,ceObject=CEc, catchCat='DIS',
+  type='trip',sampPar=TRUE,incl.precision=TRUE)   
+#totV_marees <- RaiseAge(dbeOutput=totV_marees,csObject=CSDc)  
+str(totV_marees)
+dbePlot(object=totV_marees,elmt='lenNum$ci',dispKey=TRUE,indScale=TRUE,   ylab='number at length')
+ 
+#aggrégations sur les métiers
+aggreg<-stratAggreg(object=totV_marees,timeStrata=FALSE,techStrata=TRUE, spaceStrata=TRUE,incl.precision=TRUE,wt='totalW')
+dbePlot(object=aggreg,elmt='lenNum$ci',dispKey=TRUE,indScale=TRUE,   ylab='number at length')
+
+#Aggrégations sur l'année
+aggreg<-stratAggreg(object=totV_marees,timeStrata=TRUE,techStrata=TRUE, spaceStrata=TRUE,incl.precision=TRUE,wt='totalW')
+dbePlot(object=aggreg,elmt='lenNum$ci',dispKey=TRUE,indScale=TRUE,   ylab='number at length')
+
+# E2 - test de l'élévation de la partie retenue
+test_marees <- totVolume(dbeOutput=LAN_dbe,csObject=CSDc,ceObject=CEc, catchCat='LAN',
+  type='trip',sampPar=TRUE,incl.precision=TRUE)   
+
+test_marees2 <- totVolume(dbeOutput=LAN_dbe,csObject=CSDc,ceObject=CEc, catchCat='LAN',
+  type='fd',sampPar=TRUE,incl.precision=TRUE)   
+
+test_marees3 <- totVolume(dbeOutput=LAN_dbe,csObject=CSDc,ceObject=CEc, catchCat='LAN',
+  type='time',sampPar=TRUE,incl.precision=TRUE)   
+  
+CLA <- aggregate(x=list(landValue=CLc@cl$landWt), by=list(time=CLc@cl$time,space=CLc@cl$space, technical=CLc@cl$technical), sum)
+
+COMP <- merge(CLA,test_marees@totalWnum$ci, by=c('time','space','technical'), all.x=TRUE)
+names(COMP)[5:7] <- c('value.trip','inf.trip','sup.trip')
+COMP <- merge(COMP, test_marees2@totalWnum$ci, by=c('time','space','technical'), all.x=TRUE)
+names(COMP)[8:10] <- c('value.fd','inf.fd','sup.fd')
+COMP <- merge(COMP, test_marees3@totalWnum$ci, by=c('time','space','technical'), all.x=TRUE, suffixes='.h')
+names(COMP)[11:13] <- c('value.time','inf.time','sup.time')
+
+plot(COMP$landWt, type='l',axes=FALSE, ylim=c(0, max(COMP$sup.trip, COMP$sup.fd, COMP$sup.time, na.rm=TRUE)))
+kx<- 1:nrow(CLA)
+axis(2)
+axis(side=1,at=x,labels=as.character(COMP$technical),las=3)
+segments(x-0.1, COMP$inf.trip, x-0.1, COMP$sup.trip, col='blue')
+points(x-0.1, COMP$value.trip,pch=16,col='blue')
+segments(x, COMP$inf.fd, x, COMP$sup.fd, col='red')
+points(x, COMP$value.fd, pch=16,col='red')
+segments(x+0.1, COMP$inf.time, x+0.1, COMP$sup.time, col='green')
+points(x+0.1, COMP$value.time, pch=16, col='green')
+legend('topleft',col=c('black','blue','red','green'),lwd=1, legend=c('Landings','trip','fd','time'))
+
+
+# E3 - Estimation par le nombre de jours
+totV_marees <- totVolume(dbeOutput=DIS_dbe,csObject=CSDc,ceObject=CEc, catchCat='DIS',
+  type='fd',sampPar=TRUE,incl.precision=TRUE)   
+totV_marees <- RaiseAge(dbeOutput=totV_marees,csObject=CSDc)  
+
+dbePlot(object=totV_marees,elmt='ageNum$ci',dispKey=TRUE,indScale=TRUE,   ylab='number@age')
+
+# E4 - Estimation par le temps de pêche
+totV_marees <- totVolume(dbeOutput=DIS_dbe,csObject=CSDc,ceObject=CEc, catchCat='DIS',
+  type='time',sampPar=TRUE,incl.precision=TRUE)   
+totV_marees <- RaiseAge(dbeOutput=totV_marees,csObject=CSDc)  
+
+dbePlot(object=totV_marees,elmt='ageNum$ci',dispKey=TRUE,indScale=TRUE,   ylab='number@age')
+
+# E5 - Estimation par les débarquements
+totV_marees <- totVolume(dbeOutput=DIS_dbe,csObject=CSDc,clObject=CLc, ceObject=CEc, catchCat='DIS',
+  type='landings',sampPar=TRUE,incl.precision=TRUE)   
+totV_marees <- RaiseAge(dbeOutput=totV_marees,csObject=CSDc)  
+
+dbePlot(object=totV_marees,elmt='ageNum$ci',dispKey=TRUE,indScale=TRUE,   ylab='number@age')
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+################################################################################################
+
+### données obsmer
+# dans cs, taille en mm et 650 pour 65-66cm donc lower bound. poids en g
+
+setwd("C:/Users/jalemany.IFR/Documents/Tempo")
+
+load("base_obsmer_non_validée_COST_date_04_10_14.Rdata")
+cs<-COST_04_10_14
+str(cs)
+load("lieu.rda")
+str(seiche)
+head(seiche)
+csPlot.design(seiche)
+cstSummary(lieu, tab='tr')
+is(cs)
+
+### données sacrois
+setwd("C:/Users/jalemany.IFR/Documents/Tempo/SACROISJour_Flux_2013_v3.3.1_3-10-2014")
