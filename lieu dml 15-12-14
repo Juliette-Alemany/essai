@@ -1,0 +1,171 @@
+rm(list=ls())
+library(lattice)
+library(COSTcore)
+library(COSTdbe)
+library(tcltk2)
+library(COSTeda)
+#install.packages('Rcmdr')
+#library(Rcmdr)
+library(tkrplot)
+#library(COSTgui)
+library(COSTifremer)
+library(FLCore)
+library(stats)
+
+setwd("C:/Users/jalemany.IFR/Documents/LIEU JAUNE/R/IBTS CPUE")
+setwd("C:/Users/jalemany.IFR/Documents/LIEU JAUNE/R/data obsmer")
+
+### Importe données de captures par années (landings+discards)
+
+setwd("C:/Users/jalemany.IFR/Documents/LIEU JAUNE/R/DCAC")
+capt<-read.csv(file="stock.csv", header=TRUE, sep=";")
+table(capt$stock)
+capt<-subset(capt, subset=c(capt$stock=="pol-celt"))
+head(capt)
+
+##### Importe les données de débarquements et rejets de lieu jaune pour 2013
+setwd("C:/Users/jalemany.IFR/Documents/LIEU JAUNE/R/Intercatch 2013")
+lieu.capt<-read.csv(file="lieu.capt.csv", header=TRUE, sep=";")
+head(lieu.capt)
+unique(lieu.capt$year)
+
+### essai DLM
+
+library(snow)
+library(snowfall)
+library(boot)
+library(MASS)
+library(DLMtool)
+for(i in 1:length(DLMdat))assign(DLMdat[[i]]@Name,DLMdat[[i]])
+sfInit(parallel=T,cpus=2)
+sfExportAll()
+set.seed(1)
+
+# define an operating model
+
+OM<-new('OM',
+Rockfish,
+Generic_fleet,
+Imprecise_Biased)
+
+
+## Create a DLM object
+DLMDataDir()
+Madeup<-new('DLM')
+
+Madeup@Name<-'Test'
+ # Name it
+head(capt)
+Madeup@Cat<-as.matrix(as.numeric(capt$ct))
+
+#Madeup@Cat<-matrix(20:11* rlnorm(10,meanlog=0,sdlog=0.2),nrow=1) # Generate fake catch data
+Madeup@Units<-"tonnes" # State units of catch
+Madeup@AvC<-mean(Madeup@Cat) # Average catches for time t (DCAC)
+Madeup@t<-ncol(Madeup@Cat) # No. yrs for Av. catch (DCAC)
+Madeup@Dt<-0.5 # Depletion over time t (DCAC)
+Madeup@Dep<-0.5 # Depletion relative to unfished
+Madeup@Mort<-0.2 # Natural mortality rate
+Madeup@Abun<-8000 # Current abundance
+Madeup@FMSY_M<-0.75 # Ratio of FMSY/M
+Madeup@AM<-3 # Age at maturity
+Madeup@BMSY_B0<-0.35 # BMSY relative to unfished
+Madeup@MaxAge=15
+Madeup@Ref=13900
+Madeup@vbLinf=130
+Madeup@AM=3
+Madeup@FMSY_M=0.6
+Madeup@BMSY_B0=0.5
+Madeup@Name='Lieu jaune'
+Madeup@Year=c(1950:2013)
+Madeup@Dep=0.5
+
+
+Can(Madeup)
+Needed(Madeup)
+Madeup<-getQuota(Madeup,reps=48)
+plot(Madeup)
+
+class?DLM
+D<-new('DLM')
+#total annual catches (matrice)
+D@Cat=c()
+
+Can(D)
+Needed(D)
+lieu<-getQuota(Madeup)
+
+
+### fait un MSE pour stock préenregistré. Trouver un moyer de créer un OM.
+methods<-c("DCAC","DCACA_40", "DCACA4010","DepF","Fdem","Fratio","Fratio4010","matsizlim","area1MPA")
+RockMSE<-runMSE(OM,methods,nsim=20, reps=1,proyears=30,interval=5)
+Tplot(RockMSE)
+png('DLM res MSE2.png')
+plot(RockMSE)
+dev.off()
+
+## on peut créer de nouvelles fonction
+
+AvC<-function(x,DLM,reps)rlnorm(reps,log(mean(DLM@Cat[x,],na.rm=T)),0.1)
+class(AvC)<-"DLM quota"
+environment(AvC)<-asNamespace('DLMtool')
+sfExport("AvC")
+
+summary(capt)
+
+#########################################################################
+
+setwd("C:/Users/jalemany.IFR/Documents/Tempo/SACROISJour_Flux_2013_v3.3.1_3-10-2014")
+
+memory.limit(size=10000000000000)
+#z <- unz(paste("C:\\Users\\jalemany.IFR\\Documents\\Tempo\\SACROISJour_Flux_2013_v3.3.1_3-10-2014.zip",sep=""),paste("CATEGORIES-COMMERCIALES-IFR_2013.txt",sep="")) 
+#w <- unz(paste("C:\\Users\\jalemany.IFR\\Documents\\Tempo\\SACROISJour_Flux_2013_v3.3.1_3-10-2014.zip",sep=""),paste("NAVIRES-MOIS-MAREES-RECT-JOUR-IFR_2013.txt",sep="")) 
+#v <- unz(paste("C:\\Users\\jalemany.IFR\\Documents\\Tempo\\SACROISJour_Flux_2013_v3.3.1_3-10-2014.zip",sep=""),paste("RAPPROCHEMENT-MAREES-VENTES-IFR_2013.txt",sep="")) 
+#DF <- read.table(z, header = T, sep = "\t", quote = "\"", dec = ",", as.is=T)
+#DG <- read.table(w, header = T, sep = "\t", quote = "\"", dec = ",", as.is=T)
+
+#names(DH) 
+#unique(DF$ESP_LIB_FAO_FRANCAIS)
+#CatCom.S<-subset(DF, subset=c(DF$ESP_LIB_FAO_FRANCAIS=='Seiche commune'))
+#CatCom.L<-subset(DF, subset=c(DF$ESP_LIB_FAO_FRANCAIS=='Lieu jaune'))
+#MoiRec.S<-subset(DG, subset=c(DG$ESP_LIB_FAO_FRANCAIS=='Seiche commune'))
+#MoiRec.L<-subset(DG, subset=c(DG$ESP_LIB_FAO_FRANCAIS=='Lieu jaune'))
+
+#write.table(CatCom.S, file="CatCom.S.txt")
+#write.table(CatCom.L, file="CatCom.L.txt")
+#write.table(MoiRec.S, file="MoiRec.S.txt")
+#write.table(MoiRec.L, file="MoiRec.L.txt")
+
+	### vérification que la table enregistrée et chargée est bien de même 
+	###dimension que lors du subset
+#dd<-dim(MarVen.S)
+#BB<-read.table("MarVen.S.txt", header = T, sep = " ", quote = "\"",dec = ",", as.is=T)
+#dim(BB)
+
+	### Importation des données (uniquement seiche et lieu jaune)
+
+CatCom.S<-read.table("CatCom.S.txt", header = T, sep = " ", quote = "\"", dec = ",", as.is=T)
+CatCom.L<-read.table("CatCom.L.txt", header = T, sep = " ", quote = "\"", dec = ",", as.is=T)
+MoiRec.S<-read.table("MoiRec.S.txt", header = T, sep = " ", quote = "\"", dec = ",", as.is=T)
+MoiRec.L<-read.table("MoiRec.L.txt", header = T, sep = " ", quote = "\"", dec = ",", as.is=T)
+
+names(MoiRec.L)
+names(CatCom.L)
+head(MoiRec.L)
+table(MoiRec.L$CROISEMENT_DEBARQS_CAPTURES)
+table(MoiRec.L$MAREE_DATE_DEP)
+dim(MoiRec.L)
+MoiRec.L[34,]
+
+
+###Ex initial
+
+# Chargement du SACROIS, paramètrer l'année
+# AN <- "2013"
+# z <- unz(paste("C:\\aa-boulot\\R\\Donnees\\SACROIS\\SACROISJour_Flux_",AN,"_v3.3.1.zip",sep=""),paste("NAVIRES-MOIS-MAREES-RECT-IFR_",AN,".txt",sep="")) # ne pas mettre ,"r"
+# DF <- read.table(z, header = T, sep = "\t", quote = "\"", dec = ",", as.is=T, fill=T) # lit le fichier csv, as.is = TRUE remplace les facteurs par des character).
+
+# table(DF$PAVILLON) # ATTENTION il y a des navires étrangers !
+# subset des navires français
+# DF <- subset(DF, DF$PAVILLON %in% "FRA")
+
+
