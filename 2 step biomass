@@ -1,0 +1,166 @@
+#Working directory
+new_dir="C:/Users/jalemany.IFR/Documents/SEICHE/script/CUTTLEFISH"
+dir_cuttlefish.model="C:/Users/jalemany.IFR/Documents/SEICHE/script/CUTTLEFISH/R_wd"
+setwd(dir_cuttlefish.model)
+#
+library(cuttlefish.model)
+#Input data (abundance indices and total landings per quarter) are imported
+input.data<-read.table("input_data.csv", sep=";", header=T)
+
+# --------- # calcul valeurs estimées de l'ia bts pour les années 2009:2012 #
+#reg<-lm(bts~cgfs,data=input.data[1:17,3:4])
+#summary(reg)
+#new.cgfs<-data.frame(cgfs=c(input.data$cgfs[18:21]))
+#input.data$bts[18:21]<-predict(reg,new.cgfs,type="response")
+# --------------------------------------------------------------------------#
+
+#Abundance indices are re-scaled by dividing the time series by its mean
+input.data$bts<-input.data$bts/mean(input.data$bts,na.rm=T)
+input.data$cgfs<-input.data$cgfs/mean(input.data$cgfs,na.rm=T)
+input.data$lpue.fr<-input.data$lpue.fr/mean(input.data$lpue.fr,na.rm=T)
+input.data$lpue.uk<-input.data$lpue.uk/mean(input.data$lpue.uk,na.rm=T)
+
+#Creation of a data frame filled with the year, the fishing season, the abundance indices, the landings of the 3 first quarters of the fishing season (used in the modelling of the UK LPUE) and the landings of all the fishing season (used in the modelling of the french LPUE)
+lpue.obs<-data.frame(
+year=c(1992:2013),
+fishing.year=c(1:22),
+bts=input.data$bts,
+cgfs=input.data$cgfs,
+lpue.uk=input.data$lpue.uk,
+lpue.fr=input.data$lpue.fr,
+L.Q341=input.data$landings.q3 + input.data$landings.q4 + input.data$landings.q1,
+L.Q3412=input.data$landings.q3 + input.data$landings.q4 + input.data$landings.q1 + input.data$landings.q2)
+colnames(lpue.obs)<-c("year", "fishing.year", "bts","cgfs","lpue.uk","lpue.fr","L.Q341","L.Q3412")
+
+# --------- # réduit les data.frame à 1:20 pour supprimer tout les NA
+input.data<-input.data[1:21,]
+lpue.obs<-lpue.obs[1:21,]
+
+#Plot of the abundance indices
+#Growth parameter
+growth<--1.01
+
+#Initial values for the B1 time series and the 4 log catchabilities. This vector is required to launch the Sum of Square Residuals minimisation
+initial.values<-c(rep(15000,length(input.data$year)),-9, -9, -9, -9)
+
+#A first fit is launched to check if the optim function is able to fit the model with these initial.values vector
+result.B1<-optim(par=initial.values, fn=two.stage.model.fit, obs.fit=lpue.obs[1:21,], g.fit=-1.01, method = "BFGS", control=list(maxit=99990, reltol=1e-9, trace=TRUE))
+
+#Estimation of the model outputs with this first B1 and catchability estimations
+model.outputs<-two.stage.model.outputs(B1=result.B1$par[1:21], catchability=result.B1$par[22:25], obs=lpue.obs, g=-1.01)
+
+#Bootstrap methodology
+#Creation of data frame to store the B1 vector estimated after each of the 1000 loops
+boot.result.B1<-data.frame(c(1992:2012))
+colnames(boot.result.B1)<-c("year")
+
+#Creation of data frame to store the catachability vector estimated after each of the 1000 loops
+boot.result.catchabilities<-data.frame(c("k1","k2","q1","q2"))
+colnames(boot.result.catchabilities)<-c("series")
+
+#-----------------------------------------------------------------------------------------------------
+pb <- winProgressBar(title = "progress bar", min = 0,
+                     max = 100, width = 300)
+# ----------------------------------------------------------------------------------------------------
+
+for (i in 1:100)
+{
+
+# ----------------------------------------------------------------------------------------------------
+Sys.sleep(0.1)
+setWinProgressBar(pb, i, title=paste( round(i/100*100, 0),
+                                        "% done (c'est l'heure de la pause café)"))
+# ----------------------------------------------------------------------------------------------------
+
+#Creation of a data frame used to do the sample with replacement into the residuals data frame
+boot.sample<-data.frame(sample(c(1:21),21,replace=T), sample(c(1:21),21,replace=T), sample(c(1:21),21,replace=T), sample(c(1:21),21,replace=T))
+colnames(boot.sample)<-c("bts", "cgfs", "lpue.uk", "lpue.fr")
+
+#Creation of the data frame with the residuals per year and per abundance index time series
+residus.boot<-log(model.outputs$observed[,3:6]/model.outputs$predicted.ai[,2:5])
+
+#The sampled residuals are added to the predicted abundance indices to generate a new observed data set
+boot.input<-data.frame(model.outputs$observed$year, model.outputs$predicted.ai[,2:5]*exp(data.frame(residus.boot[boot.sample[,1],1], residus.boot[boot.sample[,2],2], residus.boot[boot.sample[,3],3], residus.boot[boot.sample[,4],4])),lpue.obs[,7:8])
+colnames(boot.input)<-c("year", "bts", "cgfs", "lpue.uk", "lpue.fr","L.Q341","L.Q3412")
+
+#RÃ©sultats obtenus aprÃ¨s le nouvel ajustement
+#New B1 and catchability estimations with the data previously generated
+optim.output<-optim(par=initial.values, fn=two.stage.model.fit, obs.fit=boot.input, g.fit=-1.01, method = "BFGS", control=list(maxit=99990, reltol=1e-9, trace=F))
+
+#B1 vector is stored in the data frame created before the beginning of the loop
+boot.result.B1<-data.frame(boot.result.B1, optim.output$par[1:21])
+colnames(boot.result.B1)<-c("year",c(1:i))
+
+
+#catchability vector is stored in the data frame created before the beginning of the loop
+boot.result.catchabilities[,i+1]<-optim.output$par[22:25]
+colnames(boot.result.catchabilities)<-c("series", c(1:i))
+
+#This command writes the i number reached in a text file named i.txt in the working directory
+write.table(i, "bootstrap_results/i.txt", row.names = F, col.names = F)
+}
+close(pb)
+#Results of the loop are stored in two text files
+write.table(boot.result.B1,"bootstrap_results/boot.result.B1_-1.01.txt", sep=";", row.names = F, col.names = T)
+write.table(boot.result.catchabilities,"bootstrap_results/boot.result.catchabilities_-1.01.txt", sep=";", row.names = F, col.names = T)
+
+#Imports raw B1 data generated by the bootstrap methodology
+raw.B1<-read.table("bootstrap_results/boot.result.B1_-1.01.txt",sep=";",header=T)
+
+#Creation of data frame with the 2.5% quantile, mean, median and 97.5% quantile for B1
+B1<-data.frame(c(1992:2011))
+for (i in 1:21)
+{
+B1[i,2]<-quantile(t(raw.B1[i,2:101]), probs=0.025, na.rm=T)
+B1[i,3]<-mean(t(raw.B1[i,2:101]), na.rm=T)
+B1[i,4]<-quantile(t(raw.B1[i,2:101]), probs=0.5, na.rm=T)
+B1[i,5]<-quantile(t(raw.B1[i,2:101]), probs=0.975, na.rm=T)
+}
+colnames(B1)<-c("year","Q2.5","mean","median","Q97.5")
+
+#Imports raw catchability data generated by the bootstrap methodology
+raw.catchabilities<-read.table("bootstrap_results/boot.result.catchabilities_-1.01.txt",sep=";",header=T)
+
+#Creation of a data frame with the 2.5% quantile, mean, median and 97.5% quantile for the catchabilities
+catchabilities<-data.frame(c("k1","k2","q1","q2"))
+colnames(catchabilities)<-"series"
+
+for (i in 1:4)
+{catchabilities$Q2.5[i]<-quantile(t(raw.catchabilities[1,2:101]),probs=0.025)
+catchabilities$mean[i]<-mean(t(raw.catchabilities[1,2:101]))
+catchabilities$median[i]<-quantile(t(raw.catchabilities[1,2:101]),probs=0.5)
+catchabilities$Q97.5[i]<-quantile(t(raw.catchabilities[1,2:101]),probs=0.975)}
+
+model.output.mean<-two.stage.model.outputs(B1=B1$mean,catchability=catchabilities$mean,obs=lpue.obs, g=-1.01)
+model.output.median<-two.stage.model.outputs(B1=B1$median,catchability=catchabilities$median,obs=lpue.obs, g=-1.01)
+model.output.Q2.5<-two.stage.model.outputs(B1=B1$Q2.5,catchability=catchabilities$Q2.5,obs=lpue.obs, g=-1.01)
+model.output.Q97.5<-two.stage.model.outputs(B1=B1$Q97.5,catchability=catchabilities$Q97.5,obs=lpue.obs, g=-1.01)
+
+#Creation of data frame with the 2.5% quantile, mean, median and 97.5% quantile for B2
+B2<-data.frame(c(1992:2012),
+model.output.Q2.5$biomass$B2,
+model.output.mean$biomass$B2,
+model.output.median$biomass$B2,
+model.output.Q97.5$biomass$B2)
+colnames(B2)<-c("year","Q2.5","mean","median","Q97.5")
+
+#Creation of a data frame with the B1 and B2 estimations and the corresponding year for each series
+SR<-data.frame(model.output.median$biomass$year[3:length(model.output.median$biomass$B1)], model.output.median$biomass$B1[3:length(model.output.median$biomass$B1)], model.output.median$biomass$B2[1:(length(model.output.median$biomass$B2)-2)], model.output.median$biomass$year[1:(length(model.output.median$biomass$B2)-2)])
+colnames(SR)<-c("B1.year", "B1", "B2", "B2.year")
+
+SR.Q2.5<-data.frame(model.output.Q2.5$biomass$year[3:length(model.output.Q2.5$biomass$B1)], model.output.Q2.5$biomass$B1[3:length(model.output.Q2.5$biomass$B1)], model.output.Q2.5$biomass$B2[1:(length(model.output.Q2.5$biomass$B2)-2)], model.output.Q2.5$biomass$year[1:(length(model.output.Q2.5$biomass$B2)-2)])
+colnames(SR)<-c("B1.year", "B1", "B2", "B2.year")
+
+SR.Q97.5<-data.frame(model.output.Q97.5$biomass$year[3:length(model.output.Q97.5$biomass$B1)], model.output.Q97.5$biomass$B1[3:length(model.output.Q97.5$biomass$B1)], model.output.Q97.5$biomass$B2[1:(length(model.output.Q97.5$biomass$B2)-2)], model.output.median$biomass$year[1:(length(model.output.Q97.5$biomass$B2)-2)])
+colnames(SR)<-c("B1.year", "B1", "B2", "B2.year")
+
+#Plot of the SSB and recruited biomass
+plot(SR[1:19,3], SR[1:19,2],ylim=c(0,30000),xlim=c(0,50000), xlab="SSB in tons", ylab="Recruited biomass")
+with(SR, text(SR[1:19,2]~SR[1:19,3], labels = SR[1:19,1], pos = 4))
+mean.SR<-data.frame(c(min(SR$B2), max(SR$B2)), c(mean(SR$B1), mean(SR$B1)))
+colnames(mean.SR)<-c("X","Y")
+lines(c(mean.SR$X[1:1],60000),mean.SR$Y)
+lines(c(mean.SR$X[1:1],60000),rep(mean(SR.Q2.5[,2]),2),lty=2, col='blue')
+lines(c(mean.SR$X[1:1],60000),rep(mean(SR.Q97.5[,2]),2),lty=2, col='blue')
+lines(rep(11000,2),c(0,30000),lty=5, col='red2')
+text(x=9600, y=29500,'Blim', col='red2')
