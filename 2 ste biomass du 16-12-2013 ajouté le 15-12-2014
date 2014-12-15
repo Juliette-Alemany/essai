@@ -1,0 +1,822 @@
+######################################################################################################################################################
+######################################################################################################################################################
+#######################                                                                                                      #########################
+#######################  SCRIPT D'AJUSTEMENT DU MODELE DE BIOMASSE A 2 STADES POUR L'EVALUATION DU STOCK DE SEICHE EN MANCHE #########################
+#######################                                        AUTEUR : MICHAEL GRAS                                         #########################
+#######################                                  CO-FINANCEMENT : FRANCE FILIERE PECHE                               #########################
+#######################                             DIRECTION DES PECHES MARITIMES ET DE L'AQUACULTURE                       #########################
+#######################                                                                                                      #########################
+######################################################################################################################################################
+######################################################################################################################################################
+
+
+# ATTENTION utiliser R version 3.0.3 en 64-bit car en 32-bit mémoire insuffisante
+
+#Script Ã  fournir Ã  Ifremer pour l'extraction des donnÃ©es et la standardisation des indices d'abondance utilisant la mÃ©thode du Delta-GLM
+
+#Working directory 
+new_dir="C:/Users/jalemany.IFR/Documents/SEICHE/CUTTLEFISH"
+dir_cuttlefish.model="C:/Users/jalemany.IFR/Documents/SEICHE/script/CUTTLEFISH/R_wd"
+setwd(dir_cuttlefish.model)
+#
+library(cuttlefish.model)
+####################################################################################################################################################
+#Extraction des donnÃ©es de dÃ©barquement des chalutiers de fond Ã  panneaux pour les divisions CIEM VIId et VIIe Ã  partir du fichier SACROIS
+####################################################################################################################################################
+
+#Importation du fichier SACROIS
+#SACROIS<-read.table("fichier_sacrois_2012.txt",header=T,sep="\t", dec=",")
+#SACROIS<-read.table("/media/Elements/data/professionnel/unicaen/meeting_presentations_conferences/2013.05.28_presentation_port_en_bessin/Seiche/NAVIRES-MOIS-MAREES-RECT-JOUR-IFR_.txt",header=T,sep="\t", dec=",")
+
+#Importation des donnÃ©es de flotte
+#flotte<-read.table("FichierFlotteFR.csv",header=T,sep=";")
+#flotte<-read.table("/media/Elements/data/professionnel/unicaen/meeting_presentations_conferences/2013.05.28_presentation_port_en_bessin/Seiche/FichierFlotteFR-4.csv",header=T,sep="\t")
+
+#CrÃ©ation d'un data frame contenant uniquement l'identifiant des navires (qui servira de champ de jointure avec les donnÃ©es d'effort) et la puissance du navire en KW
+#flotte<-data.frame(flotte$Registration.Nbr, flotte$Power.Main)
+#colnames(flotte)<-c("id_navire", "power")
+
+##########
+#PremiÃ¨re Ã©tape : Extraction des donnÃ©es de dÃ©barquement de seiche des chalutiers de fond Ã  panneaux
+##########
+
+#SÃ©lection des dÃ©barquements de seiche dans le fichier SACROIS
+#debarquement<-SACROIS[SACROIS$ESP_COD_FAO=="CTC" | SACROIS$ESP_COD_FAO=="CTL",]
+
+#SÃ©lection des dÃ©barquements des divisions CIEM VIId et VIIe dans le fichier SACROIS
+#debarquement<-debarquement[debarquement$DIV_CIEM_COD_SIPA=="VIId" | debarquement$DIV_CIEM_COD_SIPA=="VIIe" | debarquement$DIV_CIEM_COD_SIPA=="27.7.d" | debarquement$DIV_CIEM_COD_SIPA=="27.7.e",]
+
+#SÃ©lection des dÃ©barquements de chalutier de fond Ã  panneaux dans le fichier SACROIS
+#debarquement<-debarquement[debarquement$ENGIN_COD=="OTB",]
+
+#Suppression des lignes dont le rectangle statistique n'est pas prÃ©cisÃ©
+#debarquement<-debarquement[debarquement$RECT_COD_SIPA!="",]
+
+#SÃ©lection des colonnes NAVS_COD, MAREE_ID, MAREE_DATE_RET, RECT_COD_SIPA, QUANT_POIDS_VIF_REF_VMS, QUANT_POIDS_VIF_REF_SIPA qui sont ensuite renommÃ©es
+#debarquement<-data.frame(debarquement$NAVS_COD, debarquement$MAREE_ID, debarquement$MAREE_DATE_RET, debarquement$RECT_COD_SIPA, debarquement$QUANT_POIDS_VIF_REF_VMS, debarquement$QUANT_POIDS_VIF_REF_SIPA)
+#colnames(debarquement)<-c("id_navire", "id_maree", "date_ret", "rectangle", "deb_vms", "deb_sipa")
+
+#CrÃ©ation d'une colonne "deb" dans laquelle sont stockÃ©s les dÃ©barquements (dans un premier temps on stocke les dÃ©barquements issus du flux VMS)
+#debarquement$deb<-debarquement$deb_vms
+
+#Ensuite les dÃ©barquements non renseignÃ©s par VMS sont complÃ©tÃ©s Ã  l'aide du flux SIPA (dÃ©claratif)
+#debarquement[is.na(debarquement$deb),"deb"]<-debarquement[is.na(debarquement$deb_vms),"deb_sipa"]
+
+#VÃ©rification que la colonne dÃ©barquement ne comporte pas de NA (OK si uniquement rÃ©ponses FALSE)
+#table(is.na(debarquement$deb))
+
+#write.table(debarquement, "/media/MICHAELGRAS/seiche/debarquement.csv", col.names=T, row.names=F, sep=";")
+#debarquement<-read.table("k:/seiche/debarquement.csv", header=T, sep=";")
+
+#AggrÃ©gation des donnÃ©es afin d'obtenir une ligne par marÃ©e
+#debarquement<-aggregate(debarquement$deb, by=list(debarquement$id_navire, debarquement$id_maree, debarquement$date_ret, debarquement$rectangle), FUN=sum)
+#colnames(debarquement)<-c("id_navire", "id_maree", "date_ret", "rectangle", "deb")
+
+##########
+#DeuxiÃ¨me Ã©tape : Extraction des donnÃ©es d'efforts de pÃªche des chalutiers de fonds Ã  panneaux
+##########
+
+#SÃ©lection des chalutiers de fond Ã  panneaux
+#effort<-SACROIS[SACROIS$ENGIN_COD=="OTB",]
+
+#SÃ©lection des divisions CIEM VIId et VIIe
+#effort<-effort[effort$DIV_CIEM_COD_SIPA=="VIId" | effort$DIV_CIEM_COD_SIPA=="VIIe" | effort$DIV_CIEM_COD_SIPA=="27.7.d" | effort$DIV_CIEM_COD_SIPA=="27.7.e",]
+
+#SÃ©lection des colonnes NAVS_COD, MAREE_ID, MAREE_DATE_RET, RECT_COD_SIPA, TP_NAVIRE_REF_VMS, TP_NAVIRE_REF_SIPA qui sont ensuite renommÃ©es en accord avec les donnÃ©es de dÃ©barquement
+#effort<-data.frame(effort$NAVS_COD, effort$MAREE_ID, effort$MAREE_DATE_RET, effort$RECT_COD_SIPA, effort$TP_NAVIRE_REF_VMS, effort$TP_NAVIRE_REF_SIPA)
+#colnames(effort)<-c("id_navire", "id_maree", "date_ret", "rectangle", "effort_vms", "effort_sipa")
+
+#CrÃ©ation d'une colonne effort remplie en premier lieu par les efforts issus du fllux VMS
+#effort$effort<-effort$effort_vms
+
+#Les efforts non renseignÃ©s par le flux VMS sont ensuite remplis avec les donnÃ©es du flux SIPA
+#effort[is.na(effort$effort),"effort"]<-effort[is.na(effort$effort),"effort_sipa"]
+
+#Les efforts non renseignÃ©s restant sont complÃ©tÃ©s avec des 0 et les lignes en question sont ensuite supprimÃ©es
+#effort[is.na(effort$effort),"effort"]<-0
+#effort<-effort[effort$effort>0,]
+
+#write.table(effort, "/media/MICHAELGRAS/seiche/effort.csv", col.names=T, row.names=F, sep=";")
+#effort<-read.table("k:/seiche/effort.csv", header=T, sep=";")
+
+#Les donnÃ©es d'effort sont ensuite aggrÃ©gÃ©es pour obtenir une seule ligne par effort
+#effort<-aggregate(effort$effort, by=list(effort$id_navire, effort$id_maree, effort$date_ret, effort$rectangle), FUN=mean)
+#colnames(effort)<-c("id_navire", "id_maree", "date_ret", "rectangle", "effort")
+
+#Les lignes dont le rectangle statistique n'est pas renseignÃ© sont supprimÃ©es
+#effort<-effort[effort$rectangle!="",]
+
+#Une jointure entre les donnÃ©es d'effort et les donnÃ©es de flotte est rÃ©alisÃ©e  afin d'avoir une colonne mentionnant la puissance de pÃªche du navire concernÃ©
+#effort<-merge(x=effort, y=flotte, by=c("id_navire"))
+
+##########
+#TroisiÃ¨me Ã©tape : jointure entre les donnÃ©es d'effort et de dÃ©barquement
+##########
+
+#La jointure entre les donnÃ©es d'effort de pÃªche et de dÃ©barquement est rÃ©alisÃ©e en conservant l'ensemble des donnÃ©es d'effort de pÃªche. Les efforts de pÃªche n'ayant pas dÃ©barquÃ© de seiche prÃ©sente un NA dans la colonne dÃ©barquement
+#data.2012<-merge(x=effort, y=debarquement, by=c("id_navire", "id_maree","date_ret", "rectangle"), all.x=T)
+
+#CrÃ©ation d'un data.frame comprenant les 4 variables explicatives (annÃ©e, mois, rectangle, puissance) la quantitÃ© dÃ©barquÃ©e et l'effort dÃ©ployÃ©
+#data.2012<-data.frame(substr(data.2012$date_ret,7,10), substr(data.2012$date_ret,4,5), data.2012$rectangle, data.2012$power, data.2012$deb, data.2012$effort)
+#colnames(data.2012)<-c("year", "month", "rectangle", "power", "landing", "effort")
+
+#Remplacement des NA par des 0
+#data.2012[is.na(data.2012$landing), "landing"]<-0
+
+#CrÃ©ation d'un fichier csv contenant les donnÃ©es
+#write.table(data.2012, "lpue.csv", colnames=T, row.names=F, sep=";")
+
+####################################################################################################################################################
+#Extraction des dÃ©barquements totaux franÃ§ais Ã  partir du fichier SACROIS
+####################################################################################################################################################
+
+#Extraction des dÃ©barquement de seiche
+#debarquement.tot<-SACROIS[SACROIS$ESP_COD_FAO=="CTC" | SACROIS$ESP_COD_FAO=="CTL",]
+
+#SÃ©lection des dÃ©barquements des divisions CIEM VIId et VIIe dans le fichier SACROIS
+#debarquement.tot<-debarquement.tot[debarquement.tot$DIV_CIEM_COD_SIPA=="VIId" | debarquement.tot$DIV_CIEM_COD_SIPA=="VIIe" | debarquement.tot$DIV_CIEM_COD_SIPA=="27.7.d" | debarquement.tot$DIV_CIEM_COD_SIPA=="27.7.e",]
+
+#SÃ©lection des colonnes MAREE_DATE_RET, QUANT_POIDS_VIF_REF_VMS, QUANT_POIDS_VIF_REF_SIPA
+#debarquement.tot<-data.frame(debarquement.tot$MAREE_DATE_RET, debarquement.tot$QUANT_POIDS_VIF_REF_VMS, debarquement.tot$QUANT_POIDS_VIF_REF_SIPA)
+#colnames(debarquement.tot)<-c("MAREE_DATE_RET", "QUANT_POIDS_VIF_REF_VMS", "QUANT_POIDS_VIF_REF_SIPA")
+
+#CrÃ©ation des colonnes year, month
+#debarquement.tot$year<-substr(debarquement.tot$MAREE_DATE_RET,7,10)
+#debarquement.tot$month<-substr(debarquement.tot$MAREE_DATE_RET,4,5)
+
+#CrÃ©ation de la colonne deb.tot qui est remplie dans un premier temps avec les dÃ©barquement du flux VMS. Les donnÃ©es manquantes sont ensuite complÃ©tÃ©es avec les dÃ©barquements du flux SIPA. 
+#debarquement.tot$deb.tot<-debarquement.tot$QUANT_POIDS_VIF_REF_VMS
+#debarquement.tot[is.na(debarquement.tot$deb.tot), "deb"]<-debarquement.tot[is.na(debarquement.tot$deb.tot), "QUANT_POIDS_VIF_REF_SIPA"]
+
+
+#debarquement.tot<-data.frame(debarquement.tot$year, debarquement.tot$quarter, debarquement.tot$deb.tot)
+#colnames(debarquement.tot)<-c("year", "quarter", "landing")
+#debarquement.tot<-aggregate(debarquement.tot$landing/1000, by=list(debarquement.tot$year,debarquement.tot$quarter), FUN="sum")
+#colnames(debarquement.tot)<-c("year", "quarter", "landing")
+
+#write.table(debarquement.tot, "debarquement.tot.csv", colnames=T, row.names=F, sep=";")
+
+#######################
+# Abundance index derived from CGFS survey
+#######################
+taille<-read.table("CGFS_raw_data/Tailles.txt", sep=";", header=T)
+taille<-taille[taille$Espece=='SEPIOFF',]
+taille[c(1:100),]
+table(taille$Annee)
+
+
+trait.1<-read.table("CGFS_raw_data/Trait.txt", sep=";", header=T)
+trait.2<-read.table("CGFS_raw_data/Trait_2.txt", sep=";", header=T)
+trait<-merge(x=trait.1, y=trait.2, all=T, all.x=T, by=c("Annee","Trait"))
+
+trait<-trait[trait$Annee>=1992,]
+
+captures<-read.table("CGFS_raw_data/Captures.txt", sep=";", header=T)
+captures<-captures[captures$Espece=="SEPIOFF",]
+captures<-captures[captures$Annee>=1992,]
+
+cgfs.ai<-merge(x=trait, y=captures, by=c("Annee","Trait"), all=T, all.y=T)
+cgfs.ai<-data.frame(cgfs.ai$Annee, cgfs.ai$Trait, cgfs.ai$Strate, cgfs.ai$Poids, cgfs.ai$Duree.trait)
+colnames(cgfs.ai)<-c("Annee", "Trait", "Strate", "Poids", "Duree.trait")
+
+cgfs.ai[is.na(cgfs.ai$Poids),"Poids"]<-0
+cgfs.ai$Duree.trait<-cgfs.ai$Duree.trait/60
+
+cgfs.ai$ai<-cgfs.ai$Poids/cgfs.ai$Duree.trait
+cgfs.ai<-aggregate(cgfs.ai$ai, by=list(cgfs.ai$Annee, cgfs.ai$Strate), FUN="mean")
+colnames(cgfs.ai)<-c("Annee", "Strate", "ai")
+
+cgfs.ai<-aggregate(cgfs.ai$ai, by=list(cgfs.ai$Annee), FUN="mean")
+colnames(cgfs.ai)<-c("Annee", "ai")
+
+####################################################################################################################################################
+#STEP 1: LPUE  STANDARDISATION
+
+#French LPUE standardisation using the Delta-GLM
+#Data importation
+# fr.data.landing.effort<-read.table("fr.effort.data_1992-2012.txt", sep=";", header=T)
+ fr.data.landing.effort<-read.table("fr.effort.data_1992-2013.txt", sep=";", header=T)
+
+
+
+##############################
+#library(RODBC)
+#channel2 <- odbcConnect("input_data", uid="michael", pwd="L3epirez", case="postgresql")
+
+#fr.data.landing.effort<-sqlQuery(channel2, "
+#select foo.annee as annee, foo.mois, rectangle, puissance_nav,capture, effort, pourcentage_c1 from
+#(select annee,mois,rectangle,puissance as puissance_nav,landings as capture,effort
+#from cpue_92_98
+#where rectangle<>'7D1' and rectangle<>'7E1' and rectangle<>'7E2'
+#union all
+#select annee,mois,rectangle,puissance_nav,capture,effort
+#from cpue
+#where cast(annee as int)>=1999) as foo
+#inner join pourcent_cohorte_1 on (foo.annee=pourcent_cohorte_1.annee and foo.mois=pourcent_cohorte_1.mois)
+#")
+#colnames(fr.data.landing.effort)<-c("year","month","rectangle","power","landing","effort","pourcentage_c1")
+########################################"
+
+#Replacement of the NAs by a 0
+fr.data.landing.effort[is.na(fr.data.landing.effort$landing),"landing"]<-0
+fr.data.landing.effort[is.na(fr.data.landing.effort$effort),"effort"]<-0
+
+#This line enables the selection of lines non null effort
+fr.data.landing.effort<-fr.data.landing.effort[fr.data.landing.effort$effort>0,]
+
+#This command removes the rows with no rectangle filled
+fr.data.landing.effort$rectangle<-as.character(fr.data.landing.effort$rectangle)
+fr.data.landing.effort<-fr.data.landing.effort[fr.data.landing.effort$rectangle!="",]
+fr.data.landing.effort$rectangle<-as.factor(fr.data.landing.effort$rectangle)
+
+#Creation of the column fishing.season which starts in July of each year and end in June of next year
+fr.data.landing.effort$fishing.season<-"NA"
+fr.data.landing.effort[fr.data.landing.effort$year==1992 & fr.data.landing.effort$month<7,]$fishing.season<-"00"
+fr.data.landing.effort[fr.data.landing.effort$year==1992 & fr.data.landing.effort$month>=7,]$fishing.season<-"01"
+fr.data.landing.effort[fr.data.landing.effort$year==1993 & fr.data.landing.effort$month<7,]$fishing.season<-"01"
+fr.data.landing.effort[fr.data.landing.effort$year==1993 & fr.data.landing.effort$month>=7,]$fishing.season<-"02"
+fr.data.landing.effort[fr.data.landing.effort$year==1994 & fr.data.landing.effort$month<7,]$fishing.season<-"02"
+fr.data.landing.effort[fr.data.landing.effort$year==1994 & fr.data.landing.effort$month>=7,]$fishing.season<-"03"
+fr.data.landing.effort[fr.data.landing.effort$year==1995 & fr.data.landing.effort$month<7,]$fishing.season<-"03"
+fr.data.landing.effort[fr.data.landing.effort$year==1995 & fr.data.landing.effort$month>=7,]$fishing.season<-"04"
+fr.data.landing.effort[fr.data.landing.effort$year==1996 & fr.data.landing.effort$month<7,]$fishing.season<-"04"
+fr.data.landing.effort[fr.data.landing.effort$year==1996 & fr.data.landing.effort$month>=7,]$fishing.season<-"05"
+fr.data.landing.effort[fr.data.landing.effort$year==1997 & fr.data.landing.effort$month<7,]$fishing.season<-"05"
+fr.data.landing.effort[fr.data.landing.effort$year==1997 & fr.data.landing.effort$month>=7,]$fishing.season<-"06"
+fr.data.landing.effort[fr.data.landing.effort$year==1998 & fr.data.landing.effort$month<7,]$fishing.season<-"06"
+fr.data.landing.effort[fr.data.landing.effort$year==1998 & fr.data.landing.effort$month>=7,]$fishing.season<-"07"
+fr.data.landing.effort[fr.data.landing.effort$year==1999 & fr.data.landing.effort$month<7,]$fishing.season<-"07"
+fr.data.landing.effort[fr.data.landing.effort$year==1999 & fr.data.landing.effort$month>=7,]$fishing.season<-"08"
+fr.data.landing.effort[fr.data.landing.effort$year==2000 & fr.data.landing.effort$month<7,]$fishing.season<-"08"
+fr.data.landing.effort[fr.data.landing.effort$year==2000 & fr.data.landing.effort$month>=7,]$fishing.season<-"09"
+fr.data.landing.effort[fr.data.landing.effort$year==2001 & fr.data.landing.effort$month<7,]$fishing.season<-"09"
+fr.data.landing.effort[fr.data.landing.effort$year==2001 & fr.data.landing.effort$month>=7,]$fishing.season<-"10"
+fr.data.landing.effort[fr.data.landing.effort$year==2002 & fr.data.landing.effort$month<7,]$fishing.season<-"10" 
+fr.data.landing.effort[fr.data.landing.effort$year==2002 & fr.data.landing.effort$month>=7,]$fishing.season<-"11"
+fr.data.landing.effort[fr.data.landing.effort$year==2003 & fr.data.landing.effort$month<7,]$fishing.season<-"11"
+fr.data.landing.effort[fr.data.landing.effort$year==2003 & fr.data.landing.effort$month>=7,]$fishing.season<-"12"
+fr.data.landing.effort[fr.data.landing.effort$year==2004 & fr.data.landing.effort$month<7,]$fishing.season<-"12"
+fr.data.landing.effort[fr.data.landing.effort$year==2004 & fr.data.landing.effort$month>=7,]$fishing.season<-"13"
+fr.data.landing.effort[fr.data.landing.effort$year==2005 & fr.data.landing.effort$month<7,]$fishing.season<-"13"
+fr.data.landing.effort[fr.data.landing.effort$year==2005 & fr.data.landing.effort$month>=7,]$fishing.season<-"14"
+fr.data.landing.effort[fr.data.landing.effort$year==2006 & fr.data.landing.effort$month<7,]$fishing.season<-"14"
+fr.data.landing.effort[fr.data.landing.effort$year==2006 & fr.data.landing.effort$month>=7,]$fishing.season<-"15"
+fr.data.landing.effort[fr.data.landing.effort$year==2007 & fr.data.landing.effort$month<7,]$fishing.season<-"15"
+fr.data.landing.effort[fr.data.landing.effort$year==2007 & fr.data.landing.effort$month>=7,]$fishing.season<-"16"
+fr.data.landing.effort[fr.data.landing.effort$year==2008 & fr.data.landing.effort$month<7,]$fishing.season<-"16"
+fr.data.landing.effort[fr.data.landing.effort$year==2008 & fr.data.landing.effort$month>=7,]$fishing.season<-"17"
+fr.data.landing.effort[fr.data.landing.effort$year==2009 & fr.data.landing.effort$month<7,]$fishing.season<-"17"
+fr.data.landing.effort[fr.data.landing.effort$year==2009 & fr.data.landing.effort$month>=7,]$fishing.season<-"18"
+fr.data.landing.effort[fr.data.landing.effort$year==2010 & fr.data.landing.effort$month<7,]$fishing.season<-"18"
+fr.data.landing.effort[fr.data.landing.effort$year==2010 & fr.data.landing.effort$month>=7,]$fishing.season<-"19"
+fr.data.landing.effort[fr.data.landing.effort$year==2011 & fr.data.landing.effort$month<7,]$fishing.season<-"19"
+fr.data.landing.effort[fr.data.landing.effort$year==2011 & fr.data.landing.effort$month>=7,]$fishing.season<-"20"
+fr.data.landing.effort[fr.data.landing.effort$year==2012 & fr.data.landing.effort$month<7,]$fishing.season<-"20"
+fr.data.landing.effort[fr.data.landing.effort$year==2012 & fr.data.landing.effort$month>=7,]$fishing.season<-"21"
+fr.data.landing.effort[fr.data.landing.effort$year==2013 & fr.data.landing.effort$month<7,]$fishing.season<-"21"
+fr.data.landing.effort[fr.data.landing.effort$year==2013 & fr.data.landing.effort$month>=7,]$fishing.season<-"22"
+
+#A check is required to be sure that all rows have been taken into account, if 0 row are returned you can go to the next step, if some rows are mentioned you need to modify the previous step to create the required fishing sesons
+fr.data.landing.effort[fr.data.landing.effort$fishing.season=="NA",]
+
+
+#Creation of the column power.class
+#fr.data.landing.effort$power.class<-"NA"
+#fr.data.landing.effort[fr.data.landing.effort$power<100,]$power.class<-"p0-99"
+#fr.data.landing.effort[fr.data.landing.effort$power>99 & fr.data.landing.effort$power<200,]$power.class<-"p100-199"
+#fr.data.landing.effort[fr.data.landing.effort$power>199 & fr.data.landing.effort$power<300,]$power.class<-"p200-299"
+#fr.data.landing.effort[fr.data.landing.effort$power>299 & fr.data.landing.effort$power<400,]$power.class<-"p300-399"
+#fr.data.landing.effort[fr.data.landing.effort$power>399 & fr.data.landing.effort$power<500,]$power.class<-"p400-499"
+#fr.data.landing.effort[fr.data.landing.effort$power>499 & fr.data.landing.effort$power<600,]$power.class<-"p500-599"
+#fr.data.landing.effort[fr.data.landing.effort$power>599 & fr.data.landing.effort$power<700,]$power.class<-"p600-699"
+#fr.data.landing.effort[fr.data.landing.effort$power>699 & fr.data.landing.effort$power<800,]$power.class<-"p700-799"
+#fr.data.landing.effort[fr.data.landing.effort$power>799 & fr.data.landing.effort$power<900,]$power.class<-"p800-899"
+#fr.data.landing.effort[fr.data.landing.effort$power>999 & fr.data.landing.effort$power<1100,]$power.class<-"p1000-1099"
+#fr.data.landing.effort[fr.data.landing.effort$power>1399 & fr.data.landing.effort$power<1500,]$power.class<-"p1400-1499"
+#fr.data.landing.effort[fr.data.landing.effort$power>1799 & fr.data.landing.effort$power<1900,]$power.class<-"p1800-1899"
+#fr.data.landing.effort[fr.data.landing.effort$power>2899 & fr.data.landing.effort$power<3000,]$power.class<-"p2900-3000"
+
+
+##A check is required to be sure that all rows have been taken into account, if 0 row are returned you can go to the next step, if some rows are mentioned you need to modify the previous step to create the required power class
+fr.data.landing.effort[fr.data.landing.effort$power.class=="NA",]
+
+## Quelques lignes NA:
+fr.data.landing.effort<-na.omit(fr.data.landing.effort)
+
+#Creation of a data frame filled with the year, the fishing season, the month, the ICES rectangle, the power class for each LPUE
+fr.data.lpue<-data.frame(fr.data.landing.effort$year, fr.data.landing.effort$fishing.season, fr.data.landing.effort$month, fr.data.landing.effort$rectangle, fr.data.landing.effort$power.class, fr.data.landing.effort$landing/fr.data.landing.effort$effort*fr.data.landing.effort$pourcentage_c1)
+colnames(fr.data.lpue)<-c("year", "fishing.season", "month", "rectangle", "power.class", "lpue")
+
+#Columns year, month, rectangle and power.class must be defined as factors
+fr.data.lpue$year<-as.factor(fr.data.lpue$year)
+fr.data.lpue$fishing.season<-as.factor(fr.data.lpue$fishing.season)
+fr.data.lpue$month<-as.factor(fr.data.lpue$month)
+fr.data.lpue$rectangle<-as.factor(fr.data.lpue$rectangle)
+fr.data.lpue$power.class<-as.factor(fr.data.lpue$power.class)
+
+head(fr.data.lpue)
+write.table(fr.data.lpue, "fr.data.lpue.csv", row.names=F, sep=";")
+write.table(fr.data.landing.effort, "fr.data.landing.effort.csv", row.names=F, sep=";")
+write.table(uk.data.lpue, "uk.data.lpue.csv", row.names=F, sep=";")
+write.table(uk.data.landing.effort, "uk.data.landing.effort.csv", row.names=F, sep=";")
+
+####################################################################
+#####################################################################
+######################################################################
+# On peut commencer ici
+rm(list=ls())
+fr.data.lpue<-read.table("fr.data.lpue.csv",header=T,sep=";")
+fr.data.landing.effort<-read.table("fr.data.landing.effort.csv",header=T,sep=";")
+uk.data.lpue<-read.table("uk.data.lpue.csv",header=T,sep=";")
+uk.data.landing.effort<-read.table("uk.data.landing.effort.csv",header=T,sep=";")
+
+head(uk.data.lpue)
+head(fr.data.landing.effort)
+
+memory.size(1000000000)
+#The delta GLM can be fitted
+fr.delta.glm<-delta.glm(input.data=fr.data.lpue)
+
+#Anova to check if each variable used in the binomial error GLM has a significant effect
+
+anova(fr.delta.glm$binomial.glm,test="Chisq")
+
+#Graphs to check the fit quality of the binomial error GLM
+par(mfrow = c(2,2))
+#Histogram of the Binomial error GLM residuals 
+hist(fr.delta.glm$binomial.residuals)
+#Plot of the fitted values vs residuals estimated from the Binomial error GLM 
+plot(fr.delta.glm$binomial.fit,fr.delta.glm$binomial.residuals)
+#QQ plot of the binomial error GLM
+qqnorm(fr.delta.glm$binomial.residuals)
+qqline(fr.delta.glm$binomial.residuals)
+
+#Anova to check if each variable used in the gaussian error GLM has a significant effect
+anova(fr.delta.glm$gaussian.glm,test="Chisq")
+
+#Graphs to check the fit quality of the Gaussian error GLM
+par(mfrow = c(2,2))
+#Histogram of the Gaussian error GLM residuals 
+hist(fr.delta.glm$gaussian.residuals)
+#Plot of the fitted values vs residuals estimated from the Gaussian error GLM 
+plot(fr.delta.glm$gaussian.fit,fr.delta.glm$gaussian.residuals)
+#QQ plot of the Gaussian error GLM
+qqnorm(fr.delta.glm$gaussian.residuals)
+qqline(fr.delta.glm$gaussian.residuals)
+
+#Aggregation of the standardized LPUE per year
+fr.yearly.lpue<-aggregate(fr.delta.glm$predicted.lpue$st.lpue, list(fr.delta.glm$predicted.lpue$fishing.season), FUN="mean")
+fr.yearly.lpue<-data.frame(c(1991:2013), fr.yearly.lpue)
+colnames(fr.yearly.lpue)<-c("year","fishing.season","fr.st.lpue")
+
+#Plot of the standardized LPUE aggregated per year
+plot(x=fr.yearly.lpue$year, y=fr.yearly.lpue$fr.st.lpue, type='b', pch=16, ylim=c(0,(max(fr.yearly.lpue$fr.st.lpue))))
+
+#Aggregation of the standardized LPUE per month
+fr.monthly.lpue<-aggregate(fr.delta.glm$predicted.lpue$st.lpue, list(fr.delta.glm$predicted.lpue$month), FUN="mean")
+fr.monthly.lpue<-data.frame(fr.monthly.lpue)
+colnames(fr.monthly.lpue)<-c("month","fr.st.lpue")
+
+##################################################
+#UK LPUE standardisation using the Delta-GLM
+##################################################
+
+#Importation of the observed raw data
+# uk.data.landing.effort<-read.table("uk.effort.data_1992-2012.txt", sep=";", header=T)
+# uk.data.landing.effort<-read.table("uk.effort.data_1992-2013.txt", sep=";", header=T)
+
+###############################################################
+#library(RODBC)
+#channel3 <- odbcConnect("uk", uid="michael", pwd="L3epirez", case="postgresql")
+
+#uk.data.landing.effort<-sqlQuery(channel3, "
+#select year_landing as annee,month_landing as mois,ices_rectangle as rectangle,engine_power as puissance,ctl_weight_live_kg as capture,effort_calculated as effort from landings_beam_trawl
+#where (ices_division='VIID' or ices_division='VIIE') and vessel_nationality='GBE' and year_landing<=2008
+#order by year_landing,month_landing,ices_rectangle
+#")
+#colnames(uk.data.landing.effort)<-c("year","month","rectangle", "power", "landing", "effort")
+################################################################
+
+#Remove the rows with null effort
+#uk.data.landing.effort<-uk.data.landing.effort[uk.data.landing.effort$effort>0,]
+
+#Creation of the column fishing.season which starts in July of each year and end in June of next year
+#uk.data.landing.effort$fishing.season<-"NA"
+#uk.data.landing.effort[uk.data.landing.effort$year==1992 & uk.data.landing.effort$month<7,]$fishing.season<-"00"
+#uk.data.landing.effort[uk.data.landing.effort$year==1992 & uk.data.landing.effort$month>=7,]$fishing.season<-"01"
+#uk.data.landing.effort[uk.data.landing.effort$year==1993 & uk.data.landing.effort$month<7,]$fishing.season<-"01"
+#uk.data.landing.effort[uk.data.landing.effort$year==1993 & uk.data.landing.effort$month>=7,]$fishing.season<-"02"
+#uk.data.landing.effort[uk.data.landing.effort$year==1994 & uk.data.landing.effort$month<7,]$fishing.season<-"02" 
+#uk.data.landing.effort[uk.data.landing.effort$year==1994 & uk.data.landing.effort$month>=7,]$fishing.season<-"03"
+#uk.data.landing.effort[uk.data.landing.effort$year==1995 & uk.data.landing.effort$month<7,]$fishing.season<-"03"
+#uk.data.landing.effort[uk.data.landing.effort$year==1995 & uk.data.landing.effort$month>=7,]$fishing.season<-"04"
+#uk.data.landing.effort[uk.data.landing.effort$year==1996 & uk.data.landing.effort$month<7,]$fishing.season<-"04"
+#uk.data.landing.effort[uk.data.landing.effort$year==1996 & uk.data.landing.effort$month>=7,]$fishing.season<-"05"
+#uk.data.landing.effort[uk.data.landing.effort$year==1997 & uk.data.landing.effort$month<7,]$fishing.season<-"05"
+#uk.data.landing.effort[uk.data.landing.effort$year==1997 & uk.data.landing.effort$month>=7,]$fishing.season<-"06"
+#uk.data.landing.effort[uk.data.landing.effort$year==1998 & uk.data.landing.effort$month<7,]$fishing.season<-"06"
+#uk.data.landing.effort[uk.data.landing.effort$year==1998 & uk.data.landing.effort$month>=7,]$fishing.season<-"07"
+#uk.data.landing.effort[uk.data.landing.effort$year==1999 & uk.data.landing.effort$month<7,]$fishing.season<-"07"
+#uk.data.landing.effort[uk.data.landing.effort$year==1999 & uk.data.landing.effort$month>=7,]$fishing.season<-"08"
+#uk.data.landing.effort[uk.data.landing.effort$year==2000 & uk.data.landing.effort$month<7,]$fishing.season<-"08"
+#uk.data.landing.effort[uk.data.landing.effort$year==2000 & uk.data.landing.effort$month>=7,]$fishing.season<-"09"
+#uk.data.landing.effort[uk.data.landing.effort$year==2001 & uk.data.landing.effort$month<7,]$fishing.season<-"09"
+#uk.data.landing.effort[uk.data.landing.effort$year==2001 & uk.data.landing.effort$month>=7,]$fishing.season<-"10"
+#uk.data.landing.effort[uk.data.landing.effort$year==2002 & uk.data.landing.effort$month<7,]$fishing.season<-"10" 
+#uk.data.landing.effort[uk.data.landing.effort$year==2002 & uk.data.landing.effort$month>=7,]$fishing.season<-"11"
+#uk.data.landing.effort[uk.data.landing.effort$year==2003 & uk.data.landing.effort$month<7,]$fishing.season<-"11"
+#uk.data.landing.effort[uk.data.landing.effort$year==2003 & uk.data.landing.effort$month>=7,]$fishing.season<-"12"
+#uk.data.landing.effort[uk.data.landing.effort$year==2004 & uk.data.landing.effort$month<7,]$fishing.season<-"12"
+#uk.data.landing.effort[uk.data.landing.effort$year==2004 & uk.data.landing.effort$month>=7,]$fishing.season<-"13"
+#uk.data.landing.effort[uk.data.landing.effort$year==2005 & uk.data.landing.effort$month<7,]$fishing.season<-"13"
+#uk.data.landing.effort[uk.data.landing.effort$year==2005 & uk.data.landing.effort$month>=7,]$fishing.season<-"14"
+#uk.data.landing.effort[uk.data.landing.effort$year==2006 & uk.data.landing.effort$month<7,]$fishing.season<-"14"
+#uk.data.landing.effort[uk.data.landing.effort$year==2006 & uk.data.landing.effort$month>=7,]$fishing.season<-"15"
+#uk.data.landing.effort[uk.data.landing.effort$year==2007 & uk.data.landing.effort$month<7,]$fishing.season<-"15"
+#uk.data.landing.effort[uk.data.landing.effort$year==2007 & uk.data.landing.effort$month>=7,]$fishing.season<-"16"
+#uk.data.landing.effort[uk.data.landing.effort$year==2008 & uk.data.landing.effort$month<7,]$fishing.season<-"16"
+#uk.data.landing.effort[uk.data.landing.effort$year==2008 & uk.data.landing.effort$month>=7,]$fishing.season<-"17"
+#uk.data.landing.effort[uk.data.landing.effort$year==2009 & uk.data.landing.effort$month<7,]$fishing.season<-"17"
+#uk.data.landing.effort[uk.data.landing.effort$year==2009 & uk.data.landing.effort$month>=7,]$fishing.season<-"18"
+#uk.data.landing.effort[uk.data.landing.effort$year==2010 & uk.data.landing.effort$month<7,]$fishing.season<-"18"
+#uk.data.landing.effort[uk.data.landing.effort$year==2010 & uk.data.landing.effort$month>=7,]$fishing.season<-"19"
+#uk.data.landing.effort[uk.data.landing.effort$year==2011 & uk.data.landing.effort$month<7,]$fishing.season<-"19"
+#uk.data.landing.effort[uk.data.landing.effort$year==2011 & uk.data.landing.effort$month>=7,]$fishing.season<-"20"
+#uk.data.landing.effort[uk.data.landing.effort$year==2012 & uk.data.landing.effort$month<7,]$fishing.season<-"20"
+#uk.data.landing.effort[uk.data.landing.effort$year==2012 & uk.data.landing.effort$month>=7,]$fishing.season<-"21"
+#uk.data.landing.effort[uk.data.landing.effort$year==2013 & uk.data.landing.effort$month<7,]$fishing.season<-"21"
+#uk.data.landing.effort[uk.data.landing.effort$year==2013 & uk.data.landing.effort$month>=7,]$fishing.season<-"22"
+
+#A check is required to be sure that all rows have been taken into account, if 0 row are returned you can go to the next step, if some rows are mentioned you need to modify the previous step to create the required fishing sesons
+#uk.data.landing.effort[uk.data.landing.effort$fishing.season=="NA",]
+
+#Creation of the column power.class
+#uk.data.landing.effort$power.class<-"NA"
+#uk.data.landing.effort[uk.data.landing.effort$power<100,]$power.class<-"p0-99"
+#uk.data.landing.effort[uk.data.landing.effort$power>99 & uk.data.landing.effort$power<200,]$power.class<-"p100-199"
+#uk.data.landing.effort[uk.data.landing.effort$power>199 & uk.data.landing.effort$power<300,]$power.class<-"p200-299"
+#uk.data.landing.effort[uk.data.landing.effort$power>299 & uk.data.landing.effort$power<400,]$power.class<-"p300-399"
+#uk.data.landing.effort[uk.data.landing.effort$power>399 & uk.data.landing.effort$power<500,]$power.class<-"p400-499"
+#uk.data.landing.effort[uk.data.landing.effort$power>499 & uk.data.landing.effort$power<600,]$power.class<-"p500-599"
+#uk.data.landing.effort[uk.data.landing.effort$power>599 & uk.data.landing.effort$power<700,]$power.class<-"p600-699"
+#uk.data.landing.effort[uk.data.landing.effort$power>699 & uk.data.landing.effort$power<800,]$power.class<-"p700-799"
+#uk.data.landing.effort[uk.data.landing.effort$power>799 & uk.data.landing.effort$power<900,]$power.class<-"p800-899"
+#uk.data.landing.effort[uk.data.landing.effort$power>1099 & uk.data.landing.effort$power<1200,]$power.class<-"p1100-1199"
+#uk.data.landing.effort[uk.data.landing.effort$power>1199 & uk.data.landing.effort$power<1300,]$power.class<-"p1200-1299"
+#uk.data.landing.effort[uk.data.landing.effort$power>1399 & uk.data.landing.effort$power<1500,]$power.class<-"p1400-1499"
+#uk.data.landing.effort[uk.data.landing.effort$power>1499 & uk.data.landing.effort$power<2000,]$power.class<-"p1500-2000"
+
+
+#A check is required to be sure that all rows have been taken into account, if 0 row are returned you can go to the next step, if some rows are mentioned you need to modify the previous step to create the required power class
+#uk.data.landing.effort[uk.data.landing.effort$power.class=="NA",]
+
+#Creation of a data frame filled with the year, the fishing season, the month, the ICES rectangle, the power class for each LPUE
+#uk.data.lpue<-data.frame(uk.data.landing.effort$year, uk.data.landing.effort$fishing.season, uk.data.landing.effort$month, uk.data.landing.effort$rectangle, uk.data.landing.effort$power.class, uk.data.landing.effort$landing/uk.data.landing.effort$effort)
+#colnames(uk.data.lpue)<-c("year", "fishing.season", "month","rectangle","power.class","lpue")
+
+#Columns year, month, rectangle and power.class must be defined as factors
+#uk.data.lpue$year<-as.factor(uk.data.lpue$year)
+#uk.data.lpue$fishing.season<-as.factor(uk.data.lpue$fishing.season)
+#uk.data.lpue$month<-as.factor(uk.data.lpue$month)
+#uk.data.lpue$rectangle<-as.factor(uk.data.lpue$rectangle)
+#uk.data.lpue$power.class<-as.factor(uk.data.lpue$power.class)
+
+
+#########################################################################
+head(uk.data.lpue)
+head(uk.data.landing.effort)
+table(uk.data.landing.effort$year)
+
+#The delta GLM can be fitted
+uk.delta.glm<-delta.glm(input.data=uk.data.lpue)
+
+#Graphs to check the fit quality of the binomial error GLM
+anova(uk.delta.glm$binomial.glm,test="Chisq")
+
+#Graphs to check the fit quality of the binomial error GLM
+par(mfrow = c(2,2))
+#Histogram of the Binomial error GLM residuals 
+hist(uk.delta.glm$binomial.residuals)
+#Plot of the fitted values vs residuals estimated from the Binomial error GLM 
+plot(uk.delta.glm$binomial.fit,uk.delta.glm$binomial.residuals)
+#QQ plot of the Gaussian error GLM
+qqnorm(uk.delta.glm$binomial.residuals)
+qqline(uk.delta.glm$binomial.residuals)
+
+#Graphs to check the fit quality of the Gaussian error GLM
+anova(uk.delta.glm$gaussian.glm,test="Chisq")
+
+#Graphs to check the fit quality of the Gaussian error GLM
+par(mfrow = c(2,2))
+#Histogram of the Gaussian error GLM residuals 
+hist(uk.delta.glm$gaussian.residuals)
+#Plot of the fitted values vs residuals estimated from the Gaussian error GLM 
+plot(uk.delta.glm$gaussian.fit,uk.delta.glm$gaussian.residuals)
+#QQ plot of the Gaussian error GLM
+qqnorm(uk.delta.glm$gaussian.residuals)
+qqline(uk.delta.glm$gaussian.residuals)
+
+#Aggregation of the standardized LPUE per year
+uk.yearly.lpue<-aggregate(uk.delta.glm$predicted.lpue$st.lpue, list(uk.delta.glm$predicted.lpue$fishing.season), FUN=mean)
+uk.yearly.lpue<-data.frame(c(1991:2013), uk.yearly.lpue)
+colnames(uk.yearly.lpue)<-c("year","fishing.season","uk.st.lpue")
+
+#Plot of the standardized LPUE aggregated per year
+plot(x=uk.yearly.lpue$year, y=uk.yearly.lpue$uk.st.lpue, type='b', pch=16, ylim=c(0,(max(uk.yearly.lpue$uk.st.lpue))))
+
+####################################################################################################################################################
+#Landing data import
+# MAJ landing / par trimestres
+#sum(subset(fr.data.landing.effort,year=="2013" & month %in% 4:6)$landing
+#, subset(uk.data.landing.effort,year=="2013" & month %in% 4:6)$landing )    /1000
+
+##########
+#Modelling
+##########
+
+#Input data (abundance indices and total landings per quarter) are imported 
+input.data<-read.table("input_data.csv", sep=";", header=T)
+input.data<-input.data[1:21,]
+
+#Abundance indices are re-scaled by dividing the time series by its mean
+input.data$bts<-input.data$bts/mean(input.data$bts)
+input.data$cgfs<-input.data$cgfs/mean(input.data$cgfs)
+input.data$lpue.fr<-input.data$lpue.fr/mean(input.data$lpue.fr)
+input.data$lpue.uk<-input.data$lpue.uk/mean(input.data$lpue.uk)
+
+#Creation of a data frame filled with the year, the fishing season, the abundance indices, the landings of the 3 first quarters of the fishing season (used in the modelling of the UK LPUE) and the landings of all the fishing season (used in the modelling of the french LPUE)
+lpue.obs<-data.frame(c(1992:(length(input.data$year)+1991)), 
+c(1:length(input.data$year)), 
+input.data$bts, 
+input.data$cgfs, 
+input.data$lpue.uk, 
+input.data$lpue.fr, 
+input.data$landings.q3 + input.data$landings.q4 + input.data$landings.q1, 
+input.data$landings.q3 + input.data$landings.q4 + input.data$landings.q1 + input.data$landings.q2)
+colnames(lpue.obs)<-c("year", "fishing.year", "bts","cgfs","lpue.uk","lpue.fr","L.Q341","L.Q3412")
+
+#Plot of the abundance indices
+#Growth parameter
+growth<--1.01
+
+#Initial values for the B1 time series and the 4 log catchabilities. This vector is required to launch the Sum of Square Residuals minimisation
+initial.values<-c(rep(15000,length(input.data$year)),-9, -9, -9, -9)
+
+#A first fit is launched to check if the optim function is able to fit the model with these initial.values vector
+result.B1<-optim(par=initial.values, fn=two.stage.model.fit, obs.fit=lpue.obs[1:length(input.data$year),], g.fit=-1.01, method = "BFGS", control=list(maxit=99990, reltol=1e-9, trace=TRUE))
+
+#Estimation of the model outputs with this first B1 and catchability estimations
+model.outputs<-two.stage.model.outputs(B1=result.B1$par[1:length(input.data$year)], catchability=result.B1$par[(length(input.data$year)+1):(length(input.data$year)+4)], obs=lpue.obs, g=-1.01)
+
+#Bootstrap methodology
+#Creation of data frame to store the B1 vector estimated after each of the 1000 loops
+boot.result.B1<-data.frame(c(1992:(length(input.data$year)+1991)))
+colnames(boot.result.B1)<-c("year")
+
+#Creation of data frame to store the catachability vector estimated after each of the 1000 loops
+boot.result.catchabilities<-data.frame(c("k1","k2","q1","q2"))
+colnames(boot.result.catchabilities)<-c("series")
+
+#Creation of a progress bar
+#pb <- winProgressBar(title = "Progress bar", min = 0, max = 10, width = 300)
+
+imin<-1
+imax<-100
+
+for (i in imin:imax)
+{
+#Sys.sleep(0.1)
+
+#Creation of a data frame used to do the sample with replacement into the residuals data frame
+boot.sample<-data.frame(sample(c(1:length(input.data$year)),length(input.data$year),replace=T), sample(c(1:length(input.data$year)),length(input.data$year),replace=T), sample(c(1:length(input.data$year)),length(input.data$year),replace=T), sample(c(1:length(input.data$year)),length(input.data$year),replace=T))
+colnames(boot.sample)<-c("bts", "cgfs", "lpue.uk", "lpue.fr")
+
+#Creation of the data frame with the residuals per year and per abundance index time series
+residus.boot<-log(model.outputs$observed[,3:6]/model.outputs$predicted.ai[,2:5])
+
+#The sampled residuals are added to the predicted abundance indices to generate a new observed data set
+boot.input<-data.frame(model.outputs$observed$year, model.outputs$predicted.ai[,2:5]*exp(data.frame(residus.boot[boot.sample[,1],1], residus.boot[boot.sample[,2],2], residus.boot[boot.sample[,3],3], residus.boot[boot.sample[,4],4])),lpue.obs[,7:8])
+colnames(boot.input)<-c("year", "bts", "cgfs", "lpue.uk", "lpue.fr","L.Q341","L.Q3412")
+
+#RÃ©sultats obtenus aprÃ¨s le nouvel ajustement
+#New B1 and catchability estimations with the data previously generated
+optim.output<-optim(par=initial.values, fn=two.stage.model.fit, obs.fit=boot.input, g.fit=-1.01, method = "BFGS", control=list(maxit=99990, reltol=1e-9, trace=F))
+
+#B1 vector is stored in the data frame created before the beginning of the loop
+boot.result.B1<-data.frame(boot.result.B1, optim.output$par[1:length(input.data$year)])
+colnames(boot.result.B1)<-c("year",c(1:i))
+
+
+#catchability vector is stored in the data frame created before the beginning of the loop
+boot.result.catchabilities[,i+1]<-optim.output$par[(length(input.data$year)+1):(length(input.data$year)+4)]
+colnames(boot.result.catchabilities)<-c("series", c(1:i))
+
+#setWinProgressBar(pb, i, title=paste(round(i/imax*100, 0), "% done (c'est l'heure de la pause cafÃ©)"))
+write.table(i,"i.txt",row.names = F, col.names = F)
+}
+
+#Results of the loop are stored in two text files
+write.table(boot.result.B1,"bootstrap_results/boot.result.B1_-1.01.txt", sep=";", row.names = F, col.names = T)
+write.table(boot.result.catchabilities,"bootstrap_results/boot.result.catchabilities_-1.01.txt", sep=";", row.names = F, col.names = T)
+
+# - OU
+
+#raw.B1<-boot.result.B1
+#raw.catchabilities<-boot.result.catchabilities
+
+#Imports raw B1 data generated by the bootstrap methodology
+raw.B1<-read.table("bootstrap_results/boot.result.B1_-1.01.txt",sep=";",header=T)
+
+#Creation of data frame with the 2.5% quantile, mean, median and 97.5% quantile for B1
+B1<-data.frame(c(1992:(length(input.data$year)+1991)))
+
+for (i in 1:(length(input.data$year)))
+{
+B1[i,2]<-quantile(t(raw.B1[i,2:1001]), probs=0.025, na.rm=T)
+B1[i,3]<-mean(t(raw.B1[i,2:1001]), na.rm=T)
+B1[i,4]<-quantile(t(raw.B1[i,2:1001]), probs=0.5, na.rm=T)
+B1[i,5]<-quantile(t(raw.B1[i,2:1001]), probs=0.975, na.rm=T)
+}
+colnames(B1)<-c("year","Q2.5","mean","median","Q97.5")
+
+#Imports raw catchability data generated by the bootstrap methodology
+raw.catchabilities<-read.table("bootstrap_results/boot.result.catchabilities_-1.01.txt",sep=";",header=T)
+
+#Creation of a data frame with the 2.5% quantile, mean, median and 97.5% quantile for the catchabilities
+catchabilities<-data.frame(c("k1","k2","q1","q2"))
+colnames(catchabilities)<-"series"
+catchabilities$Q2.5[1]<-quantile(t(raw.catchabilities[1,2:1001]),probs=0.025)
+catchabilities$mean[1]<-mean(t(raw.catchabilities[1,2:1001]))
+catchabilities$median[1]<-quantile(t(raw.catchabilities[1,2:1001]),probs=0.5)
+catchabilities$Q97.5[1]<-quantile(t(raw.catchabilities[1,2:1001]),probs=0.975)
+
+catchabilities$Q2.5[2]<-quantile(t(raw.catchabilities[2,2:1001]),probs=0.025)
+catchabilities$mean[2]<-mean(t(raw.catchabilities[2,2:1001]))
+catchabilities$median[2]<-quantile(t(raw.catchabilities[2,2:1001]),probs=0.5)
+catchabilities$Q97.5[2]<-quantile(t(raw.catchabilities[2,2:1001]),probs=0.975)
+
+catchabilities$Q2.5[3]<-quantile(t(raw.catchabilities[3,2:1001]),probs=0.025)
+catchabilities$mean[3]<-mean(t(raw.catchabilities[3,2:1001]))
+catchabilities$median[3]<-quantile(t(raw.catchabilities[3,2:1001]),probs=0.5)
+catchabilities$Q97.5[3]<-quantile(t(raw.catchabilities[3,2:1001]),probs=0.975)
+
+catchabilities$Q2.5[4]<-quantile(t(raw.catchabilities[4,2:1001]),probs=0.025)
+catchabilities$mean[4]<-mean(t(raw.catchabilities[4,2:1001]))
+catchabilities$median[4]<-quantile(t(raw.catchabilities[4,2:1001]),probs=0.5)
+catchabilities$Q97.5[4]<-quantile(t(raw.catchabilities[4,2:1001]),probs=0.975)
+
+model.output.mean<-two.stage.model.outputs(B1=B1$mean,catchability=catchabilities$mean,obs=lpue.obs, g=-1.01)
+model.output.median<-two.stage.model.outputs(B1=B1$median,catchability=catchabilities$median,obs=lpue.obs, g=-1.01)
+model.output.Q2.5<-two.stage.model.outputs(B1=B1$Q2.5,catchability=catchabilities$Q2.5,obs=lpue.obs, g=-1.01)
+model.output.Q97.5<-two.stage.model.outputs(B1=B1$Q97.5,catchability=catchabilities$Q97.5,obs=lpue.obs, g=-1.01)
+
+#Creation of data frame with the 2.5% quantile, mean, median and 97.5% quantile for B2
+B2<-data.frame(c(1992:(length(input.data$year)+1991)),
+model.output.Q2.5$biomass$B2,
+model.output.mean$biomass$B2,
+model.output.median$biomass$B2,
+model.output.Q97.5$biomass$B2)
+colnames(B2)<-c("year","Q2.5","mean","median","Q97.5")
+
+head(uk.data.lpue)
+head(uk.data.landing.effort)
+head(cuttlefish.landings)
+
+#Importation of the landings
+cuttlefish.landings<-read.table("landings.csv", header=T, sep=';')
+annual.landings<-aggregate(cuttlefish.landings$total.landings, by=list(cuttlefish.landings$year), FUN="sum")
+colnames(annual.landings)<-c("year","total.landings")
+
+fr.annual.landings<-aggregate(cuttlefish.landings$fr.landings, by=list(cuttlefish.landings$year), FUN="sum")
+colnames(fr.annual.landings)<-c("year","fr.landings")
+
+uk.annual.landings<-aggregate(cuttlefish.landings$uk.landings, by=list(cuttlefish.landings$year), FUN="sum")
+colnames(uk.annual.landings)<-c("year","uk.landings")
+
+annual.landings<-data.frame(annual.landings$year, fr.annual.landings$fr.landings, uk.annual.landings$uk.landings, annual.landings$total.landings)
+colnames(annual.landings)<-c("year", "fr.landings", "uk.landings", "total.landings")
+
+png("annual_landings.png", width = 1000, height = 800, pointsize = 25)
+plot(x=annual.landings$year, y=annual.landings$total.landings, ylim=c(0,max(annual.landings$total.landings)), type='b', las=3, lab=c(length(input.data$year),5,0), xlab="Years", ylab="Landings in tons", main="Total landings (-o-), French landings (-x-) \n and UK landings (-+-)", lwd=2)
+points(x=annual.landings$year ,y=annual.landings$fr.landings, pch=4, type='b', lwd=2)
+points(x=annual.landings$year ,y=annual.landings$uk.landings, pch=3, type='b', lwd=2)
+#savePlot("annual_landings.png", type='png')
+dev.off()
+
+
+#Plot of B1 and B2 time series with their confidence intervals
+png("figure_B1_B2.png", width = 1000, height = 800, pointsize = 25)
+plot(x=B2$year, y=B2$median, type='b', lty=1, las=3, ylim=c(0,max(B2$Q97.5,na.rm=T)), xlab="Years", ylab="Tons of cuttlefish", lab=c(length(input.data$year),5,0), pch=3, main="B1 (-o-)\nB2 (-+-)", lwd=2)
+lines(x=B2$year, B2$Q2.5, type='l', lty=2, las=2, lwd=2)
+lines(x=B2$year, B2$Q97.5, type='l', lty=2, las=2, lwd=2)
+
+points(x=B1$year, B1$median, type='b', lty=1, las=2, lab=c(length(input.data$year),5,0), lwd=2)
+lines(x=B1$year, B1$Q2.5, type='l', lty=3, las=2, lwd=2)
+lines(x=B1$year, B1$Q97.5, type='l', lty=3, las=2, lwd=2)
+dev.off()
+
+#BTS abundance index fitting
+plot(x=model.output.median$observed$year,model.output.median$observed$bts,ylim=c(0,max(model.output.median$observed$bts)),lty=1,las=2,lab=c(length(input.data$year),3,0), pch=2, main="BTS Survey", xlab="Years", ylab="BTS abundance index")
+points(x=model.output.median$predicted.ai$year, model.output.median$predicted.ai$bts,type='b')
+points(x=model.output.Q2.5$predicted.ai$year, model.output.Q2.5$predicted.ai$bts,type='l',lty=2)
+points(x=model.output.Q97.5$predicted.ai$year, model.output.Q97.5$predicted.ai$bts,type='l',lty=2)
+
+#Standardized residuals
+plot(model.output.median$residuals.st$bts,main="BTS Standardized Residuals")
+
+##QQ plot
+qqnorm(model.output.median$residuals.st$bts,main="QQ plot of BTS time series")
+qqline(model.output.median$residuals.st$bts)
+
+#CGFS abundance index fitting
+plot(x=model.output.median$observed$year,model.output.median$observed$cgfs, ylim=c(0,max(model.output.Q97.5$predicted.ai$cgfs,na.rm=T)),lty=1,las=2,lab=c(length(input.data$year),3,0), pch=2, main="CGFS Survey", xlab="Years", ylab="CGFS abundance index")
+points(x=model.output.median$predicted.ai$year, model.output.median$predicted.ai$cgfs,type='b')
+points(x=model.output.Q2.5$predicted.ai$year, model.output.Q2.5$predicted.ai$cgfs,type='l',lty=2)
+points(x=model.output.Q97.5$predicted.ai$year, model.output.Q97.5$predicted.ai$cgfs,type='l',lty=2)
+
+#Standardized residuals
+plot(model.output.median$residuals.st$cgfs,main="CGFS Standardized Residuals")
+
+##QQ plot
+qqnorm(model.output.median$residuals.st$cgfs,main="QQ plot of CGFS time series")
+qqline(model.output.median$residuals.st$cgfs)
+
+#UK LPUE fitting
+plot(x=model.output.median$observed$year,model.output.median$observed$lpue.uk, ylim=c(0,max(model.output.Q97.5$predicted.ai$uk)),lty=1,las=2,lab=c(length(input.data$year),3,0), pch=2, main="UK LPUE", xlab="Years", ylab="UK LPUE")
+points(x=model.output.median$predicted.ai$year, model.output.median$predicted.ai$uk,type='b')
+points(x=model.output.Q2.5$predicted.ai$year, model.output.Q2.5$predicted.ai$uk,type='l',lty=2)
+points(x=model.output.Q97.5$predicted.ai$year, model.output.Q97.5$predicted.ai$uk,type='l',lty=2)
+
+#Standardized residuals
+plot(model.output.median$residuals.st$lpue.uk,main="UK LPUE Standardized Residuals")
+
+#QQ plot
+qqnorm(model.output.median$residuals.st$lpue.uk,main="QQ plot of UK time series")
+qqline(model.output.median$residuals.st$lpue.uk)
+
+#French LPUE fitting
+plot(x=model.output.median$observed$year,model.output.median$observed$lpue.fr, ylim=c(0,max(model.output.Q97.5$predicted.ai$fr)),lty=1,las=2,lab=c(length(input.data$year),3,0), pch=2, main="French LPUE", xlab="Years", ylab="French LPUE")
+points(x=model.output.median$predicted.ai$year, model.output.median$predicted.ai$fr,type='b')
+points(x=model.output.Q2.5$predicted.ai$year, model.output.Q2.5$predicted.ai$fr,type='l',lty=2)
+points(x=model.output.Q97.5$predicted.ai$year, model.output.Q97.5$predicted.ai$fr,type='l',lty=2)
+
+#Standardized residuals
+plot(model.output.median$residuals.st$lpue.fr,main="French LPUE Standardized Residuals")
+
+##QQ plot
+qqnorm(model.output.median$residuals.st$lpue.fr,main="QQ plot of French time series")
+qqline(model.output.median$residuals.st$lpue.fr)
+
+#If you need to put the 4 previous graphs together on one figure
+png("figure_4_ia.png", width = 1000, height = 800, pointsize = 15)
+par(mfrow = c(2,2))
+plot(x=model.output.median$observed$year,y=model.output.median$observed$bts,ylim=c(0,max(model.output.median$observed$bts)),lty=1,las=2,lab=c(length(input.data$year),3,0), pch=2, main="BTS Survey", xlab="Years", ylab="BTS abundance index", lwd=1)
+points(x=model.output.median$predicted.ai$year, model.output.median$predicted.ai$bts,type='b', lwd=1)
+points(x=model.output.Q2.5$predicted.ai$year, model.output.Q2.5$predicted.ai$bts,type='l',lty=2, lwd=1)
+points(x=model.output.Q97.5$predicted.ai$year, model.output.Q97.5$predicted.ai$bts,type='l',lty=2, lwd=1)
+plot(x=model.output.median$observed$year,model.output.median$observed$cgfs, ylim=c(0,max(model.output.Q97.5$predicted.ai$cgfs)),lty=1,las=2,lab=c(length(input.data$year),3,0), pch=2, main="CGFS Survey", xlab="Years", ylab="CGFS abundance index", lwd=1)
+points(x=model.output.median$predicted.ai$year, model.output.median$predicted.ai$cgfs,type='b', lwd=1)
+points(x=model.output.Q2.5$predicted.ai$year, model.output.Q2.5$predicted.ai$cgfs,type='l',lty=2, lwd=1)
+points(x=model.output.Q97.5$predicted.ai$year, model.output.Q97.5$predicted.ai$cgfs,type='l',lty=2, lwd=1)
+plot(x=model.output.median$observed$year,model.output.median$observed$lpue.uk, ylim=c(0,max(model.output.Q97.5$predicted.ai$uk)),lty=1,las=2,lab=c(length(input.data$year),3,0), pch=2, main="UK LPUE", xlab="Years", ylab="UK LPUE", lwd=1)
+points(x=model.output.median$predicted.ai$year, model.output.median$predicted.ai$uk,type='b', lwd=1)
+points(x=model.output.Q2.5$predicted.ai$year, model.output.Q2.5$predicted.ai$uk,type='l',lty=2, lwd=1)
+points(x=model.output.Q97.5$predicted.ai$year, model.output.Q97.5$predicted.ai$uk,type='l',lty=2, lwd=1)
+plot(x=model.output.median$observed$year,model.output.median$observed$lpue.fr, ylim=c(0,max(model.output.Q97.5$predicted.ai$fr)),lty=1,las=2,lab=c(length(input.data$year),3,0), pch=2, main="French LPUE", xlab="Years", ylab="French LPUE", lwd=1)
+points(x=model.output.median$predicted.ai$year, model.output.median$predicted.ai$fr,type='b', lwd=1)
+points(x=model.output.Q2.5$predicted.ai$year, model.output.Q2.5$predicted.ai$fr,type='l',lty=2, lwd=1)
+points(x=model.output.Q97.5$predicted.ai$year, model.output.Q97.5$predicted.ai$fr,type='l',lty=2, lwd=1)
+dev.off()
+
+#Stock-recruitment relationship
+#Creation of a data frame with the B1 and B2 estimations and the corresponding year for each series
+SR<-data.frame(model.output.median$biomass$year[3:length(model.output.median$biomass$B1)], model.output.median$biomass$B1[3:length(model.output.median$biomass$B1)], model.output.median$biomass$B2[1:(length(model.output.median$biomass$B2)-2)], model.output.median$biomass$year[1:(length(model.output.median$biomass$B2)-2)])
+colnames(SR)<-c("B1.year", "B1", "B2", "B2.year")
+
+#Linear model to test if there is a linear relationship between the Spawning Stock Biomass and the recruitment
+SR.lm<-lm(B1 ~ B2, data=SR)
+summary(SR.lm)
+
+#If there is no stock-recruitment relationship the mean recruitment can be drawn as
+mean.SR<-data.frame(c(min(SR$B2), max(SR$B2)), c(mean(SR$B1), mean(SR$B1)))
+colnames(mean.SR)<-c("X","Y")
+IC.SR<-data.frame(
+c(min(SR$B2), max(SR$B2)),
+mean(SR$B1) - 1.96*sd(SR$B1)/sqrt(length(SR$B1)),
+mean(SR$B1) + 1.96*sd(SR$B1)/sqrt(length(SR$B1))
+)
+colnames(IC.SR)<-c("X", "Y.binf", "Y.bsup")
+
+#Plot of the SSB and recruited biomass
+png("figure_SR.png", width = 1000, height = 800, pointsize = 25)
+plot(c(0, max(x=SR$B2)), c(0, max(x=SR$B1)), xlab="Spawning Stock Biomass", ylab="Recruited biomass", main="Stock-Recruitment Relationship (years plotted are SSB years),\nAverage recruitment (solid line) with its\n95% confidence interval (dashed line)", lwd=2, type='n')
+text(SR$B2, SR$B1, labels=SR$B2.year) 
+lines(mean.SR$X, mean.SR$Y, lwd=2)
+lines(IC.SR$X, IC.SR$Y.binf, lwd=2, lty=2)
+lines(IC.SR$X, IC.SR$Y.bsup, lwd=2, lty=2)
+dev.off()
+
+#Exploitation rate plot
+png("figure_ER.png", width = 1000, height = 800, pointsize = 25)
+plot(x=model.output.median$biomass$year,y=model.output.median$biomass$exp.rate, ylim=c(0,max(model.output.median$biomass$exp.rate)), type='b',lty=1, las=2,xlab="",ylab="",lab=c(length(input.data$year),3,0), pch=1, lwd=2, main="Exploitation rate")
+dev.off()
